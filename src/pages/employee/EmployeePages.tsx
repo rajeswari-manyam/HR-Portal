@@ -1,0 +1,10 @@
+export { default as MyProfile } from './MyProfile';
+export { default as MyHolidays } from './MyHolidays';
+export { default as MyDocuments } from './MyDocuments';
+export { default as MyPerformance } from './MyPerformance';
+export { default as MyAnnouncements } from './MyAnnouncements';
+export { default as MyAttendance } from './MyAttendance';
+export { default as MyLeave } from './MyLeave';
+export { default as MyPayslips } from './MyPayslips';
+export { default as MyProjects } from './MyProjects';
+export { default as MyTasks } from './MyTasks';
