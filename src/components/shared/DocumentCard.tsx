@@ -6,6 +6,8 @@ export interface DocumentItem {
   size: string;
   type: string;
   uploadedOn: string;
+  employeeId?: string;   // ← added (optional so existing usages don't break)
+  url?: string;          // ← added (used by downloadDocument service)
 }
 
 interface DocumentCardProps {

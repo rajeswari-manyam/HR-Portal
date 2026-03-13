@@ -5,6 +5,8 @@ import Layout from './components/shared/Layout';
 
 // Auth
 import Login from './pages/auth/Login';
+import Register from './pages/auth/Register';
+
 
 // HR Pages
 import HRDashboard from './pages/hr/HRDashboard';
@@ -34,7 +36,7 @@ import MyProjects from './pages/employee/MyProjects';
 // Contexts
 import { ProjectProvider } from './context/ProjectContext';
 import { LeaveProvider } from './context/LeaveContext';
-import { TaskProvider } from './context/TaskContext'; // ← new
+import { TaskProvider } from './context/TaskContext';
 
 function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode; requiredRole?: 'hr' | 'employee' }) {
   const { user, isLoading, isAuthenticated } = useAuth();
@@ -54,13 +56,23 @@ function AppRoutes() {
 
   return (
     <Routes>
+      {/* ── Public routes (no auth required) ── */}
       <Route path="/login" element={
         isAuthenticated
           ? <Navigate to={user?.role === 'hr' ? '/hr/dashboard' : '/employee/dashboard'} replace />
           : <Login />
       } />
 
-      {/* HR Routes */}
+      {/* Registration — public, anyone can access */}
+      <Route path="/register" element={
+        isAuthenticated
+          ? <Navigate to={user?.role === 'hr' ? '/hr/dashboard' : '/employee/dashboard'} replace />
+          : <Register />
+      } />
+
+     
+
+      {/* ── HR Routes ── */}
       <Route path="/hr" element={<ProtectedRoute requiredRole="hr"><Layout /></ProtectedRoute>}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<HRDashboard />} />
@@ -79,7 +91,7 @@ function AppRoutes() {
         <Route path="projects" element={<ProjectManagement />} />
       </Route>
 
-      {/* Employee Routes */}
+      {/* ── Employee Routes ── */}
       <Route path="/employee" element={<ProtectedRoute requiredRole="employee"><Layout /></ProtectedRoute>}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<EmployeeDashboard />} />
@@ -106,7 +118,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <LeaveProvider>
-          <TaskProvider>      {/* ← shares tasks between MyTasks ↔ ProjectManagement */}
+          <TaskProvider>
             <ProjectProvider>
               <AppRoutes />
             </ProjectProvider>
