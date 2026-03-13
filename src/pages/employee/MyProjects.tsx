@@ -2,16 +2,19 @@ import { useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { INITIAL_PROJECTS, PERSONS } from '../../data/mockProjects';
 import { Project } from '../../types';
+import Table from '../../components/shared/Table';
 
 export default function MyProjects() {
   const { user } = useAuth();
-  // determine the corresponding person id from mock data
+
+  // get the corresponding person id
   const personId = useMemo(() => {
     if (!user) return null;
     const person = PERSONS.find((p) => p.employeeId === user.employeeId);
     return person?.id ?? null;
   }, [user]);
 
+  // get all projects related to the person
   const projects: Project[] = useMemo(() => {
     if (!personId) return [];
     return INITIAL_PROJECTS.filter(
@@ -22,6 +25,45 @@ export default function MyProjects() {
     );
   }, [personId]);
 
+  const columns = useMemo(
+    () => [
+      {
+        header: 'Name',
+        render: (p: Project) => <span className="font-medium">{p.name}</span>,
+      },
+      {
+        header: 'Code',
+        render: (p: Project) => p.code,
+      },
+      {
+        header: 'Status',
+        render: (p: Project) => p.status.replace('_', ' '),
+      },
+      {
+        header: 'End Date',
+        render: (p: Project) =>
+          p.endDate ? new Date(p.endDate).toLocaleDateString('en-IN') : '—',
+      },
+      {
+        header: 'Progress',
+        render: (p: Project) => {
+          const completed = p.tasks.filter((t) => t.status === 'completed').length;
+          const total = p.tasks.length;
+          const percent = total ? Math.round((completed / total) * 100) : 0;
+          return (
+            <div className="bg-slate-200 h-2 rounded-full overflow-hidden">
+              <div
+                style={{ width: `${percent}%`, backgroundColor: '#4f46e5' }}
+                className="h-full rounded-full"
+              />
+            </div>
+          );
+        },
+      },
+    ],
+    []
+  );
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
@@ -30,42 +72,7 @@ export default function MyProjects() {
       </div>
 
       {projects.length > 0 ? (
-        <div className="card p-0 overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-slate-50 border-b border-slate-100">
-              <tr>
-                <th className="table-header">Name</th>
-                <th className="table-header">Code</th>
-                <th className="table-header">Status</th>
-                <th className="table-header">End Date</th>
-                <th className="table-header">Progress</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {projects.map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50/50">
-                  <td className="table-cell font-medium">{p.name}</td>
-                  <td className="table-cell">{p.code}</td>
-                  <td className="table-cell capitalize">{p.status.replace('_', ' ')}</td>
-                  <td className="table-cell">
-                    {p.endDate ? new Date(p.endDate).toLocaleDateString('en-IN') : '—'}
-                  </td>
-                  <td className="table-cell">
-                    <div className="bg-slate-200 h-2 rounded-full overflow-hidden">
-                      <div
-                        style={{
-                          width: `${p.tasks.length ? Math.round((p.tasks.filter(t => t.status === 'completed').length / p.tasks.length) * 100) : 0}%`,
-                          backgroundColor: '#4f46e5',
-                        }}
-                        className="h-full rounded-full"
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table columns={columns} data={projects} rowsPerPage={5} emptyMessage="No projects assigned." />
       ) : (
         <div className="card text-center py-12 text-slate-400">No projects assigned.</div>
       )}

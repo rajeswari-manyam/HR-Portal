@@ -24,35 +24,40 @@ export default function MyDocuments() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div><h1 className="page-title">My Documents</h1></div>
-        <Button variant="primary" onClick={() => document.querySelector('input[type="file"]')?.click()}>
-          <Upload size={16} /> Upload
-          <input
-            type="file"
-            accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            className="hidden"
-            onChange={async e => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              setUploading(true);
-              // Simulate upload
-              await new Promise(r => setTimeout(r, 800));
-              setDocs(prev => [
-                ...prev,
-                {
-                  id: Date.now().toString(),
-                  name: file.name,
-                  size: `${(file.size / 1024).toFixed(1)} KB`,
-                  uploadedOn: new Date().toISOString(),
-                  employeeId: 'EMP001',
-                //   type: file.name.endsWith('.pdf') ? 'PDF' : 'DOC',
-                type:'other'
-                }
-              ]);
-              setUploading(false);
-              e.target.value = '';
-            }}
-          />
-      </Button>
+        <Button
+  variant="primary"
+  onClick={() => {
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+    input?.click(); // now TypeScript knows `.click()` exists
+  }}
+>
+  <Upload size={16} /> Upload
+  <input
+    type="file"
+    accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    className="hidden"
+    onChange={async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setUploading(true);
+      // Simulate upload
+      await new Promise((r) => setTimeout(r, 800));
+      setDocs((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          name: file.name,
+          size: `${(file.size / 1024).toFixed(1)} KB`,
+          uploadedOn: new Date().toISOString(),
+          employeeId: 'EMP001',
+          type: 'other',
+        },
+      ]);
+      setUploading(false);
+      e.target.value = '';
+    }}
+  />
+</Button>
       </div>
       {uploading && <div className="text-xs text-primary-600 mb-2">Uploading...</div>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -2,7 +2,7 @@ import { Users, UserPlus, CalendarCheck, ClipboardList, DollarSign, Gift, Trendi
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { mockLeaveRequests,  mockHolidays, employeeGrowthData, attendanceSummaryData, departmentDistribution } from '../../data/mockData';
 import { formatDate } from '../../utils/helpers';
-
+import StatCard from '../../components/shared/StatCard';
 
 const stats = [
   { label: 'Total Employees', value: '47', change: '+3 this month', icon: Users, color: 'bg-primary-100 text-primary-600' },
@@ -34,16 +34,14 @@ export default function HRDashboard() {
       {/* Stats grid */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {stats.map(s => (
-          <div key={s.label} className="stat-card">
-            <div className={`stat-icon ${s.color}`}>
-              <s.icon size={22} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-2xl font-black text-slate-900">{s.value}</p>
-              <p className="text-xs text-slate-500 mt-0.5 font-medium truncate">{s.label}</p>
-              <p className="text-xs text-slate-400 truncate">{s.change}</p>
-            </div>
-          </div>
+          
+          <StatCard
+    title={s.label}
+    value={s.value}
+    icon={<s.icon size={20} />}
+    change={s.change}
+    changeType="increase"
+  />
         ))}
       </div>
 

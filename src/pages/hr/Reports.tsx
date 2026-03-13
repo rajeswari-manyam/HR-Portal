@@ -1,7 +1,12 @@
+import { useState } from 'react';
 import { Download, FileBarChart, Users, CalendarCheck, DollarSign, Building2 } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { employeeGrowthData, attendanceSummaryData, departmentDistribution } from '../../data/mockData';
 
+// Reusable components
+import Button from "../../components/shared/Button"
+import Table from "../../components/shared/Table"
+import StatCard from '../../components/shared/StatCard';
 const reportTypes = [
   { label: 'Employee Report', icon: Users, desc: 'Full employee list with details', color: 'bg-primary-100 text-primary-600' },
   { label: 'Attendance Report', icon: CalendarCheck, desc: 'Monthly attendance summary', color: 'bg-emerald-100 text-emerald-600' },
@@ -11,21 +16,20 @@ const reportTypes = [
 ];
 
 export default function Reports() {
-    function exportExcel(type: string) {
-      // Simulate Excel export
-      const content = `${type} Report\nExported as Excel\n\nSample data...`;
-      const blob = new Blob([content], { type: 'application/vnd.ms-excel' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${type.replace(/\s+/g, '_')}_Report.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }
+  function exportExcel(type: string) {
+    const content = `${type} Report\nExported as Excel\n\nSample data...`;
+    const blob = new Blob([content], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${type.replace(/\s+/g, '_')}_Report.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   function exportPDF(type: string) {
-    // Simulate PDF export
     const content = `${type} Report\nExported as PDF\n\nSample data...`;
     const blob = new Blob([content], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
@@ -37,6 +41,7 @@ export default function Reports() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
@@ -44,7 +49,7 @@ export default function Reports() {
         <p className="page-subtitle">Generate and export business intelligence reports</p>
       </div>
 
-      {/* Quick export */}
+      {/* Quick export cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {reportTypes.map(r => (
           <div key={r.label} className="card flex items-center gap-4 hover:shadow-card-hover transition-all duration-300 group cursor-pointer">
@@ -54,8 +59,8 @@ export default function Reports() {
               <p className="text-xs text-slate-400">{r.desc}</p>
             </div>
             <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-semibold text-slate-600 transition-colors" onClick={() => exportPDF(r.label)}>PDF</button>
-              <button className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 rounded-lg text-xs font-semibold text-emerald-700 transition-colors" onClick={() => exportExcel(r.label)}>Excel</button>
+              <Button variant="secondary" className="px-3 py-1.5 text-xs" onClick={() => exportPDF(r.label)}>PDF</Button>
+              <Button variant="success" className="px-3 py-1.5 text-xs" onClick={() => exportExcel(r.label)}>Excel</Button>
             </div>
           </div>
         ))}
@@ -66,7 +71,7 @@ export default function Reports() {
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-slate-900">Employee Growth Trend</h3>
-            <button className="btn-secondary py-1.5 text-xs"><Download size={13} /> Export</button>
+            <Button variant="secondary" className="py-1.5 text-xs"><Download size={13} /> Export</Button>
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={employeeGrowthData}>
@@ -82,7 +87,7 @@ export default function Reports() {
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-slate-900">Weekly Attendance</h3>
-            <button className="btn-secondary py-1.5 text-xs"><Download size={13} /> Export</button>
+            <Button variant="secondary" className="py-1.5 text-xs"><Download size={13} /> Export</Button>
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={attendanceSummaryData} barSize={24}>
@@ -97,42 +102,22 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* Department stats table */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-slate-900">Department Summary</h3>
-          <button className="btn-secondary py-1.5 text-xs"><Download size={13} /> Export</button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50 border-b border-slate-100">
-              <tr>
-                <th className="table-header">Department</th>
-                <th className="table-header">Employees</th>
-                <th className="table-header">Avg Attendance</th>
-                <th className="table-header">Pending Leaves</th>
-                <th className="table-header">Avg Salary</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {departmentDistribution.map(d => (
-                <tr key={d.name} className="hover:bg-slate-50/50">
-                  <td className="table-cell">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{ background: d.color }} />
-                      <span className="font-semibold text-slate-900">{d.name}</span>
-                    </div>
-                  </td>
-                  <td className="table-cell font-semibold">{d.value}</td>
-                  <td className="table-cell text-emerald-600 font-semibold">{Math.floor(Math.random() * 10 + 85)}%</td>
-                  <td className="table-cell text-amber-600">{Math.floor(Math.random() * 4)}</td>
-                  <td className="table-cell font-semibold">₹{(Math.floor(Math.random() * 50 + 60) * 1000).toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* Department Summary Table */}
+      <Table
+        columns={[
+          { header: 'Department', render: d => (
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full" style={{ background: d.color }} />
+              {d.name}
+            </div>
+          )},
+          { header: 'Employees', render: d => d.value, className: 'font-semibold' },
+          { header: 'Avg Attendance', render: d => `${Math.floor(Math.random() * 10 + 85)}%`, className: 'text-emerald-600 font-semibold' },
+          { header: 'Pending Leaves', render: d => Math.floor(Math.random() * 4), className: 'text-amber-600' },
+          { header: 'Avg Salary', render: d => `₹${(Math.floor(Math.random() * 50 + 60) * 1000).toLocaleString()}`, className: 'font-semibold' },
+        ]}
+        data={departmentDistribution}
+      />
     </div>
   );
 }

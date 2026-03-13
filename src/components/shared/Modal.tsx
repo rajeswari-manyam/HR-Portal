@@ -8,6 +8,7 @@ interface ModalProps {
   title: string;
   children: ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+    footer?: ReactNode;  // ← add this
 }
 
 const sizes = {

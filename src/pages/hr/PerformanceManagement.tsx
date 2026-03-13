@@ -7,6 +7,10 @@ import Avatar from '../../components/shared/Avatar';
 import Modal from '../../components/shared/Modal';
 import { formatDate } from '../../utils/helpers';
 import Button from '../../components/shared/Button';
+import StatCard from '../../components/shared/StatCard';
+import InputField from '../../components/shared/InputField';
+import Select from '../../components/shared/Select';
+
 function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
   return (
     <div className="flex items-center gap-0.5">
@@ -48,11 +52,16 @@ export default function PerformanceManagement() {
           { label: 'Total Reviews', value: reviews.length, color: 'bg-primary-100 text-primary-600' },
           { label: 'Avg Rating', value: avgRating.toFixed(1) + ' / 5', color: 'bg-amber-100 text-amber-600' },
           { label: 'Reviewed', value: reviews.filter(r => r.status === 'reviewed').length, color: 'bg-emerald-100 text-emerald-600' },
-        ].map(s => (
-          <div key={s.label} className="stat-card">
-            <div className={`stat-icon ${s.color}`}><TrendingUp size={22} /></div>
-            <div><p className="text-2xl font-black text-slate-900">{s.value}</p><p className="text-sm text-slate-500 font-medium">{s.label}</p></div>
-          </div>
+        ].map((s, index) => (
+         
+           <StatCard
+              title={s.label}
+              value={s.value}
+              icon={<TrendingUp size={20} />}
+             
+            
+              color={s.color}
+            />
         ))}
       </div>
 
@@ -119,48 +128,68 @@ export default function PerformanceManagement() {
         <Modal isOpen={showNewReview} onClose={() => setShowNewReview(false)} title="Create Performance Review" size="lg">
           <div className="space-y-4">
             <div>
-              <label className="label">Employee Name</label>
-              <input
-                className="input w-full"
-                value={newReview.employeeName || ''}
-                onChange={(e) => setNewReview({ ...newReview, employeeName: e.target.value })}
-              />
+            <InputField
+  label="Employee Name"
+  value={newReview.employeeName || ''}
+  onChange={(e) =>
+    setNewReview({ ...newReview, employeeName: e.target.value })
+  }
+/>
             </div>
             <div>
-              <label className="label">Period</label>
-              <input
-                className="input w-full"
-                value={newReview.period || ''}
-                onChange={(e) => setNewReview({ ...newReview, period: e.target.value })}
-                placeholder="e.g. Q1 2025"
-              />
+           
+            <InputField
+  label="Period"
+  placeholder="e.g. Q1 2025"
+  value={newReview.period || ''}
+  onChange={(e) =>
+    setNewReview({ ...newReview, period: e.target.value })
+  }
+/>
             </div>
             <div>
-              <label className="label">Rating</label>
-              <select
-                className="input w-full"
-                value={newReview.rating || 0}
-                onChange={(e) => setNewReview({ ...newReview, rating: Number(e.target.value) })}
-              >
-                {[0,1,2,3,4,5].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
+<Select
+  label="Rating"
+  value={String(newReview.rating || 0)}
+  options={[
+    { label: "0", value: "0" },
+    { label: "1", value: "1" },
+    { label: "2", value: "2" },
+    { label: "3", value: "3" },
+    { label: "4", value: "4" },
+    { label: "5", value: "5" },
+  ]}
+  onChange={(value) =>
+    setNewReview({ ...newReview, rating: Number(value) })
+  }
+/>
             </div>
             <div>
-              <label className="label">Goals (comma separated)</label>
-              <input
-                className="input w-full"
-                value={(newReview.goals || []).join(', ')}
-                onChange={(e) => setNewReview({ ...newReview, goals: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-              />
+
+            <InputField
+  label="Goals (comma separated)"
+  value={(newReview.goals || []).join(', ')}
+  onChange={(e) =>
+    setNewReview({
+      ...newReview,
+      goals: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+    })
+  }
+/>
             </div>
             <div>
-              <label className="label">Feedback</label>
-              <textarea
-                className="input w-full resize-none"
-                rows={4}
-                value={newReview.feedback || ''}
-                onChange={(e) => setNewReview({ ...newReview, feedback: e.target.value })}
-              />
+             
+          
+  <label className="label">Feedback</label>
+  <textarea
+    className="input w-full resize-none"
+    rows={4}
+    value={newReview.feedback || ''}
+    onChange={(e) =>
+      setNewReview({ ...newReview, feedback: e.target.value })
+    }
+  />
+
             </div>
             <div className="flex justify-end gap-4">
               <Button className="btn-secondary" onClick={() => setShowNewReview(false)}>Cancel</Button>

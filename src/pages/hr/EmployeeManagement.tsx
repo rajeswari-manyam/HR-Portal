@@ -10,6 +10,8 @@ import ConfirmDialog from '../../components/shared/ConfirmDialog';
 import { formatDate, formatCurrency, generateId } from '../../utils/helpers';
 import Button from '../../components/shared/Button';
 import Select from '../../components/shared/Select';
+import InputField from '../../components/shared/InputField';
+import Table from "../../components/shared/Table";
 const emptyEmployee: Partial<Employee> = {
   fullName: '', email: '', phone: '', department: '', designation: '',
   joiningDate: '', salary: 0, address: '', emergencyContact: '', status: 'active',
@@ -62,7 +64,72 @@ export default function EmployeeManagement() {
   };
 
   const update = (key: keyof Employee, val: string | number) => setForm(prev => ({ ...prev, [key]: val }));
+const columns = [
+  {
+    header: "Employee",
+    render: (emp: Employee) => (
+      <div className="flex items-center gap-3">
+        <Avatar name={emp.fullName} size="sm" />
+        <div>
+          <p className="font-semibold text-slate-900 text-sm">{emp.fullName}</p>
+          <p className="text-xs text-slate-400">{emp.email}</p>
+        </div>
+      </div>
+    )
+  },
+  {
+    header: "ID",
+    render: (emp: Employee) => (
+      <span className="font-mono text-xs text-slate-500">
+        {emp.employeeId}
+      </span>
+    )
+  },
+  {
+    header: "Department",
+    render: (emp: Employee) => emp.department
+  },
+  {
+    header: "Designation",
+    render: (emp: Employee) => emp.designation
+  },
+  {
+    header: "Joining Date",
+    render: (emp: Employee) => formatDate(emp.joiningDate)
+  },
+  {
+    header: "Salary",
+    render: (emp: Employee) => formatCurrency(emp.salary)
+  },
+  {
+    header: "Status",
+    render: (emp: Employee) => <Badge status={emp.status} />
+  },
+  {
+    header: "Actions",
+    render: (emp: Employee) => (
+      <div className="flex items-center gap-1">
+        <button onClick={() => openView(emp)}>
+          <Eye size={15} />
+        </button>
 
+        <button onClick={() => openEdit(emp)}>
+          <Pencil size={15} />
+        </button>
+
+        <button onClick={() => toggleStatus(emp.id)}>
+          {emp.status === "active"
+            ? <UserX size={15} />
+            : <UserCheck size={15} />}
+        </button>
+
+        <button onClick={() => setDeleteId(emp.id)}>
+          <Trash2 size={15} />
+        </button>
+      </div>
+    )
+  }
+];
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
@@ -92,109 +159,110 @@ export default function EmployeeManagement() {
           <Select
   value={deptFilter}
   onChange={setDeptFilter}
-  options={departments}
+ options={departments.map(d => ({
+  label: d,
+  value: d
+}))}
   placeholder="All Departments"
   className="max-w-[160px]"
 />
         </div>
       </div>
 
-      {/* Table */}
-      <div className="card p-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50 border-b border-slate-100">
-              <tr>
-                <th className="table-header">Employee</th>
-                <th className="table-header">ID</th>
-                <th className="table-header hidden md:table-cell">Department</th>
-                <th className="table-header hidden lg:table-cell">Designation</th>
-                <th className="table-header hidden xl:table-cell">Joining Date</th>
-                <th className="table-header hidden xl:table-cell">Salary</th>
-                <th className="table-header">Status</th>
-                <th className="table-header">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filtered.map(emp => (
-                <tr key={emp.id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="table-cell">
-                    <div className="flex items-center gap-3">
-                      <Avatar name={emp.fullName} size="sm" />
-                      <div>
-                        <p className="font-semibold text-slate-900 text-sm">{emp.fullName}</p>
-                        <p className="text-xs text-slate-400">{emp.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="table-cell font-mono text-xs text-slate-500">{emp.employeeId}</td>
-                  <td className="table-cell hidden md:table-cell">
-                    <span className="flex items-center gap-1.5 text-sm"><Building2 size={13} className="text-slate-400" />{emp.department}</span>
-                  </td>
-                  <td className="table-cell text-slate-600 hidden lg:table-cell">{emp.designation}</td>
-                  <td className="table-cell hidden xl:table-cell">
-                    <span className="flex items-center gap-1.5 text-sm text-slate-500"><Calendar size={13} />{formatDate(emp.joiningDate)}</span>
-                  </td>
-                  <td className="table-cell hidden xl:table-cell font-semibold text-slate-900">{formatCurrency(emp.salary)}</td>
-                  <td className="table-cell"><Badge status={emp.status} /></td>
-                  <td className="table-cell">
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => openView(emp)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-primary-50 text-slate-400 hover:text-primary-600 transition-colors" title="View">
-                        <Eye size={15} />
-                      </button>
-                      <button onClick={() => openEdit(emp)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-amber-50 text-slate-400 hover:text-amber-600 transition-colors" title="Edit">
-                        <Pencil size={15} />
-                      </button>
-                      <button onClick={() => toggleStatus(emp.id)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors" title={emp.status === 'active' ? 'Deactivate' : 'Activate'}>
-                        {emp.status === 'active' ? <UserX size={15} /> : <UserCheck size={15} />}
-                      </button>
-                      <button onClick={() => setDeleteId(emp.id)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors" title="Delete">
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr><td colSpan={8} className="text-center py-12 text-slate-400 text-sm">No employees found</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
+    
+      <Table
+  columns={columns}
+  data={filtered}
+  rowsPerPage={5}
+  emptyMessage="No employees found"
+/>
       {/* Add/Edit Modal */}
       <Modal isOpen={modal === 'add' || modal === 'edit'} onClose={() => setModal(null)} title={modal === 'add' ? 'Add Employee' : 'Edit Employee'} size="lg">
         <div className="grid grid-cols-2 gap-4">
-          <div><label className="label">Employee ID</label><input className="input" value={form.employeeId || ''} onChange={e => update('employeeId', e.target.value)} /></div>
-          <div><label className="label">Full Name *</label><input className="input" value={form.fullName || ''} onChange={e => update('fullName', e.target.value)} /></div>
-          <div><label className="label">Email *</label><input type="email" className="input" value={form.email || ''} onChange={e => update('email', e.target.value)} /></div>
-          <div><label className="label">Phone</label><input className="input" value={form.phone || ''} onChange={e => update('phone', e.target.value)} /></div>
-          <div>
-            <label className="label">Department *</label>
-            <select className="input" value={form.department || ''} onChange={e => update('department', e.target.value)}>
-              <option value="">Select department</option>
-              {departments.map(d => <option key={d}>{d}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">Designation *</label>
-            <select className="input" value={form.designation || ''} onChange={e => update('designation', e.target.value)}>
-              <option value="">Select designation</option>
-              {designations.map(d => <option key={d}>{d}</option>)}
-            </select>
-          </div>
-          <div><label className="label">Joining Date</label><input type="date" className="input" value={form.joiningDate || ''} onChange={e => update('joiningDate', e.target.value)} /></div>
-          <div><label className="label">Salary (₹)</label><input type="number" className="input" value={form.salary || ''} onChange={e => update('salary', Number(e.target.value))} /></div>
-          <div><label className="label">Gender</label>
-            <select className="input" value={form.gender || ''} onChange={e => update('gender', e.target.value)}>
-              <option value="">Select</option>
-              <option>Male</option><option>Female</option><option>Other</option>
-            </select>
-          </div>
-          <div><label className="label">Date of Birth</label><input type="date" className="input" value={form.dateOfBirth || ''} onChange={e => update('dateOfBirth', e.target.value)} /></div>
-          <div className="col-span-2"><label className="label">Address</label><textarea className="input resize-none" rows={2} value={form.address || ''} onChange={e => update('address', e.target.value)} /></div>
-          <div className="col-span-2"><label className="label">Emergency Contact</label><input className="input" value={form.emergencyContact || ''} onChange={e => update('emergencyContact', e.target.value)} /></div>
+        <InputField
+  label="Employee ID"
+  value={form.employeeId || ""}
+  onChange={(e) => update("employeeId", e.target.value)}
+/>
+        <InputField
+  label="Full Name *"
+  value={form.fullName || ""}
+  onChange={(e) => update("fullName", e.target.value)}
+/>
+ <InputField
+  label="Email"
+  icon={<Mail size={16} />}
+  value={form.email || ""}
+  onChange={(e) => update("email", e.target.value)}
+/>
+  <InputField
+  label="Phone"
+  icon={<Phone size={16} />}
+  value={form.phone || ""}
+  onChange={(e) => update("phone", e.target.value)}
+/>
+   <Select
+  label="Department"
+  value={form.department || ""}
+  onChange={(val: string) => update("department", val)}
+  options={departments.map(d => ({
+    label: d,
+    value: d
+  }))}
+/>
+         <Select
+  label="Designation"
+  value={form.designation || ""}
+  onChange={(val) => update("designation", val)}
+  options={designations.map(d => ({
+    label: d,
+    value: d
+  }))}
+/>
+         <InputField
+  label="Joining Date"
+  type="date"
+  value={form.joiningDate || ""}
+  onChange={(e) => update("joiningDate", e.target.value)}
+/>
+        <InputField
+  label="Salary (₹)"
+  type="number"
+  value={form.salary || ""}
+  onChange={(e) => update("salary", Number(e.target.value))}
+/>
+        <Select
+  label="Gender"
+  value={form.gender || ""}
+  onChange={(val) => update("gender", val)}
+  options={["Male", "Female", "Other"].map(g => ({
+    label: g,
+    value: g
+  }))}
+/>
+         <InputField
+  label="Date of Birth"
+  type="date"
+  value={form.dateOfBirth || ""}
+  onChange={(e) => update("dateOfBirth", e.target.value)}
+/>
+       <div className="col-span-2">
+  <label className="block text-sm font-medium text-slate-700 mb-1">
+    Address
+  </label>
+
+  <textarea
+    rows={2}
+    className="input resize-none"
+    value={form.address || ""}
+    onChange={(e) => update("address", e.target.value)}
+  />
+</div>
+          <InputField
+  label="Emergency Contact"
+  value={form.emergencyContact || ""}
+  onChange={(e) => update("emergencyContact", e.target.value)}
+/>
         </div>
         <div className="flex gap-3 mt-6">
           <Button onClick={() => setModal(null)} className="btn-secondary flex-1 justify-center">Cancel</Button>

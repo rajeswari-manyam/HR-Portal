@@ -21,6 +21,7 @@ import HolidayManagement from './pages/hr/HolidayManagement';
 import Reports from './pages/hr/Reports';
 import Settings from './pages/hr/Settings';
 import ProjectManagement from './pages/hr/ProjectManagement';
+
 // Employee Pages
 import EmployeeDashboard from './pages/employee/EmployeeDashboard';
 import MyProfile from './pages/employee/MyProfile';
@@ -30,11 +31,21 @@ import { MyAttendance, MyPerformance, MyDocuments, MyAnnouncements, MyHolidays }
 import MyTasks from './pages/employee/MyTasks';
 import MyProjects from './pages/employee/MyProjects';
 
+// Contexts
+import { ProjectProvider } from './context/ProjectContext';
+import { LeaveProvider } from './context/LeaveContext';
+import { TaskProvider } from './context/TaskContext'; // ← new
+
 function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode; requiredRole?: 'hr' | 'employee' }) {
   const { user, isLoading, isAuthenticated } = useAuth();
-  if (isLoading) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-3 border-primary-600 border-t-transparent rounded-full animate-spin" /></div>;
+  if (isLoading) return (
+    <div className="flex items-center justify-center h-screen">
+      <div className="w-8 h-8 border-3 border-primary-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (requiredRole && user?.role !== requiredRole) return <Navigate to={user?.role === 'hr' ? '/hr/dashboard' : '/employee/dashboard'} replace />;
+  if (requiredRole && user?.role !== requiredRole)
+    return <Navigate to={user?.role === 'hr' ? '/hr/dashboard' : '/employee/dashboard'} replace />;
   return <>{children}</>;
 }
 
@@ -43,7 +54,11 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/login" element={isAuthenticated ? <Navigate to={user?.role === 'hr' ? '/hr/dashboard' : '/employee/dashboard'} replace /> : <Login />} />
+      <Route path="/login" element={
+        isAuthenticated
+          ? <Navigate to={user?.role === 'hr' ? '/hr/dashboard' : '/employee/dashboard'} replace />
+          : <Login />
+      } />
 
       {/* HR Routes */}
       <Route path="/hr" element={<ProtectedRoute requiredRole="hr"><Layout /></ProtectedRoute>}>
@@ -90,8 +105,23 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <AppRoutes />
-        <Toaster position="top-right" toastOptions={{ style: { borderRadius: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px' } }} />
+        <LeaveProvider>
+          <TaskProvider>      {/* ← shares tasks between MyTasks ↔ ProjectManagement */}
+            <ProjectProvider>
+              <AppRoutes />
+            </ProjectProvider>
+          </TaskProvider>
+        </LeaveProvider>
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            style: {
+              borderRadius: '12px',
+              fontFamily: 'Plus Jakarta Sans, sans-serif',
+              fontSize: '13px',
+            },
+          }}
+        />
       </BrowserRouter>
     </AuthProvider>
   );

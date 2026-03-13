@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, Role } from '../types';
+import { User } from '../types';
 
 interface AuthContextType {
   user: User | null;
@@ -24,6 +24,63 @@ const MOCK_USERS: User[] = [
   },
 ];
 
+// ── Exported helpers (used by dashboard + attendance) ────────────────────────
+
+/** Returns today as "YYYY-MM-DD" */
+export function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Called on every login.
+ * - New day  → resets everything, stamps firstLoginAt + loginAt
+ * - Same day → keeps accumulatedSeconds & firstLoginAt, updates loginAt only
+ */
+export function markLoginTime() {
+  const key = todayKey();
+  const raw = localStorage.getItem('session_data');
+  const stored = raw ? JSON.parse(raw) : {};
+  const now = Date.now();
+
+  if (stored.date !== key) {
+    // Brand-new day
+    localStorage.setItem('session_data', JSON.stringify({
+      date: key,
+      accumulatedSeconds: 0,
+      firstLoginAt: now,   // ← very first check-in of the day
+      loginAt: now,
+    }));
+  } else {
+    // Same day — preserve firstLoginAt and accumulated time
+    localStorage.setItem('session_data', JSON.stringify({
+      date: key,
+      accumulatedSeconds: stored.accumulatedSeconds || 0,
+      firstLoginAt: stored.firstLoginAt || now,  // keep original first login
+      loginAt: now,
+    }));
+  }
+}
+
+/**
+ * Called on logout.
+ * Adds elapsed seconds to accumulatedSeconds, clears loginAt (no active session).
+ */
+export function markLogoutTime() {
+  const raw = localStorage.getItem('session_data');
+  if (!raw) return;
+  const stored = JSON.parse(raw);
+  if (!stored.loginAt) return;
+
+  const elapsed = Math.floor((Date.now() - stored.loginAt) / 1000);
+  localStorage.setItem('session_data', JSON.stringify({
+    date: stored.date,
+    accumulatedSeconds: (stored.accumulatedSeconds || 0) + elapsed,
+    firstLoginAt: stored.firstLoginAt,
+    loginAt: null, // session ended
+  }));
+}
+
+// ── Provider ──────────────────────────────────────────────────────────────────
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -32,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem('hr_portal_user');
     if (stored) {
       setUser(JSON.parse(stored));
+      markLoginTime(); // resume tracking on page refresh
     }
     setIsLoading(false);
   }, []);
@@ -42,12 +100,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (found) {
       setUser(found);
       if (remember) localStorage.setItem('hr_portal_user', JSON.stringify(found));
+      markLoginTime();
       return true;
     }
     return false;
   };
 
   const logout = () => {
+    markLogoutTime();
     setUser(null);
     localStorage.removeItem('hr_portal_user');
   };

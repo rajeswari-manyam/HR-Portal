@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { Save, Building2, Mail, Shield, Settings2, Activity } from 'lucide-react';
 import Button from '../../components/shared/Button';
+import InputField from '../../components/shared/InputField';
+import Select from '../../components/shared/Select';
+import Modal from '../../components/shared/Modal';
+import ConfirmDialog from '../../components/shared/ConfirmDialog';
+import Badge from '../../components/shared/Badge';
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('company');
   const [company, setCompany] = useState({
@@ -36,17 +41,50 @@ export default function Settings() {
       {activeTab === 'company' && (
         <div className="card max-w-2xl">
           <h3 className="font-bold text-slate-900 mb-6">Company Information</h3>
-          <div className="space-y-4">
-            <div><label className="label">Company Name</label><input className="input" value={company.name} onChange={e => setCompany(p => ({ ...p, name: e.target.value }))} /></div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="label">Email</label><input type="email" className="input" value={company.email} onChange={e => setCompany(p => ({ ...p, email: e.target.value }))} /></div>
-              <div><label className="label">Phone</label><input className="input" value={company.phone} onChange={e => setCompany(p => ({ ...p, phone: e.target.value }))} /></div>
+          <div className="space-y-5">
+         <InputField 
+    label="Company Name" 
+    value={company.name} 
+    onChange={e => setCompany(p => ({ ...p, name: e.target.value }))}
+      className="h-12"
+  />
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <InputField 
+                label="Email" 
+                type="email" 
+                value={company.email} 
+                onChange={e => setCompany(p => ({ ...p, email: e.target.value }))} 
+              />
+              <InputField 
+                label="Phone" 
+                value={company.phone} 
+                onChange={e => setCompany(p => ({ ...p, phone: e.target.value }))} 
+              />
             </div>
-            <div><label className="label">Address</label><textarea className="input resize-none" rows={2} value={company.address} onChange={e => setCompany(p => ({ ...p, address: e.target.value }))} /></div>
-            <div><label className="label">Website</label><input className="input" value={company.website} onChange={e => setCompany(p => ({ ...p, website: e.target.value }))} /></div>
+              <InputField
+                label="Address"
+                value={company.address}
+                onChange={e => setCompany(p => ({ ...p, address: e.target.value }))}
+                className="h-20"
+              />
+            <InputField 
+              label="Website" 
+              value={company.website} 
+              onChange={e => setCompany(p => ({ ...p, website: e.target.value }))} 
+            />
             <div className="grid grid-cols-2 gap-4">
-              <div><label className="label">Work Start Time</label><input type="time" className="input" value={company.workStartTime} onChange={e => setCompany(p => ({ ...p, workStartTime: e.target.value }))} /></div>
-              <div><label className="label">Work End Time</label><input type="time" className="input" value={company.workEndTime} onChange={e => setCompany(p => ({ ...p, workEndTime: e.target.value }))} /></div>
+              <InputField 
+                label="Work Start Time" 
+                type="time" 
+                value={company.workStartTime} 
+                onChange={e => setCompany(p => ({ ...p, workStartTime: e.target.value }))} 
+              />
+              <InputField 
+                label="Work End Time" 
+                type="time" 
+                value={company.workEndTime} 
+                onChange={e => setCompany(p => ({ ...p, workEndTime: e.target.value }))} 
+              />
             </div>
           </div>
           <Button className="btn-primary mt-6"><Save size={16} /> Save Settings</Button>

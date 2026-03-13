@@ -3,12 +3,15 @@ import { useAuth } from '../../context/AuthContext';
 import { mockEmployees } from '../../data/mockData';
 import Avatar from '../../components/shared/Avatar';
 import Badge from '../../components/shared/Badge';
+import Button from '../../components/shared/Button';
+import InputField from '../../components/shared/InputField';
 import { formatDate, formatCurrency } from '../../utils/helpers';
 import { Pencil, Save, X } from 'lucide-react';
-import Button from '../../components/shared/Button';
+
 export default function MyProfile() {
   const { user } = useAuth();
   const emp = mockEmployees.find(e => e.employeeId === user?.employeeId) || mockEmployees[0];
+
   const [editing, setEditing] = useState(false);
   const [phone, setPhone] = useState(emp.phone);
   const [address, setAddress] = useState(emp.address);
@@ -17,8 +20,9 @@ export default function MyProfile() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div><h1 className="page-title">My Profile</h1></div>
+        <h1 className="page-title">My Profile</h1>
         {!editing ? (
           <Button variant="secondary" onClick={() => setEditing(true)}>
             <Pencil size={15} /> Edit Profile
@@ -35,7 +39,9 @@ export default function MyProfile() {
         )}
       </div>
 
+      {/* Profile Card */}
       <div className="card">
+        {/* Avatar & Info */}
         <div className="flex items-center gap-5 mb-6">
           <Avatar name={emp.fullName} size="xl" />
           <div>
@@ -48,21 +54,32 @@ export default function MyProfile() {
           </div>
         </div>
 
+        {/* Tabs */}
         <div className="flex gap-2 mb-6 flex-wrap">
           {['personal', 'job'].map(t => (
             <Button key={t} variant={activeTab === t ? 'primary' : 'secondary'} onClick={() => setActiveTab(t)}>
-              {t}
+              {t.charAt(0).toUpperCase() + t.slice(1)}
             </Button>
           ))}
         </div>
 
+        {/* Personal Tab */}
         {activeTab === 'personal' && (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-4 gap-4">
             {editing ? (
               <>
-                <div><label className="label">Phone</label><input className="input" value={phone} onChange={e => setPhone(e.target.value)} /></div>
-                <div className="col-span-2"><label className="label">Address</label><textarea className="input resize-none" rows={2} value={address} onChange={e => setAddress(e.target.value)} /></div>
-                <div className="col-span-2"><label className="label">Emergency Contact</label><input className="input" value={emergency} onChange={e => setEmergency(e.target.value)} /></div>
+                <div className="col-span-1">
+                  <InputField label="Phone" value={phone} onChange={e => setPhone(e.target.value)} className="py-3" />
+                </div>
+                <div className="col-span-1">
+                  <InputField label="Email" value={emp.email} disabled className="py-3" />
+                </div>
+                <div className="col-span-2">
+                  <InputField label="Address" value={address} onChange={e => setAddress(e.target.value)} className="py-3" />
+                </div>
+                <div className="col-span-2">
+                  <InputField label="Emergency Contact" value={emergency} onChange={e => setEmergency(e.target.value)} className="py-3" />
+                </div>
               </>
             ) : (
               [
@@ -79,6 +96,7 @@ export default function MyProfile() {
           </div>
         )}
 
+        {/* Job Tab */}
         {activeTab === 'job' && (
           <div className="grid grid-cols-2 gap-4">
             {[

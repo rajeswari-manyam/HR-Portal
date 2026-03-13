@@ -7,6 +7,9 @@ import Avatar from '../../components/shared/Avatar';
 import Modal from '../../components/shared/Modal';
 import { formatCurrency } from '../../utils/helpers';
 import Button from '../../components/shared/Button';
+import StatCard from '../../components/shared/StatCard';
+import Table from '../../components/shared/Table';
+import InputField from '../../components/shared/InputField';
 export default function PayrollManagement() {
   const [payslips, setPayslips] = useState<Payslip[]>(mockPayslips);
   const [selected, setSelected] = useState<Payslip | null>(null);
@@ -30,7 +33,85 @@ export default function PayrollManagement() {
 
   const totalPayroll = payslips.reduce((s, p) => s + p.netSalary, 0);
   const totalDeductions = payslips.reduce((s, p) => s + p.deductions, 0);
+const columns = [
+  {
+    header: "Employee",
+    render: (p: Payslip) => (
+      <div className="flex items-center gap-3">
+        <Avatar name={p.employeeName} size="sm" />
+        <div>
+          <p className="font-semibold text-slate-900 text-sm">{p.employeeName}</p>
+          <p className="text-xs text-slate-400">{p.employeeId}</p>
+        </div>
+      </div>
+    ),
+  },
+  {
+    header: "Basic",
+    render: (p: Payslip) => formatCurrency(p.basicSalary),
+  },
+  {
+    header: "HRA",
+    render: (p: Payslip) => (
+      <span className="text-blue-600 font-medium">
+        {formatCurrency(p.hra)}
+      </span>
+    ),
+  },
+  {
+    header: "Allowances",
+    render: (p: Payslip) => (
+      <span className="text-emerald-600 font-medium">
+        {formatCurrency(p.allowances)}
+      </span>
+    ),
+  },
+  {
+    header: "Deductions",
+    render: (p: Payslip) => (
+      <span className="text-red-600 font-medium">
+        -{formatCurrency(p.deductions)}
+      </span>
+    ),
+  },
+  {
+    header: "Net Salary",
+    render: (p: Payslip) => (
+      <span className="font-bold text-slate-900">
+        {formatCurrency(p.netSalary)}
+      </span>
+    ),
+  },
+  {
+    header: "Status",
+    render: (p: Payslip) => <Badge status={p.status} />,
+  },
+  {
+    header: "Actions",
+    render: (p: Payslip) => (
+      <div className="flex gap-1">
+        <button
+          onClick={() => {
+            setSelected(p);
+            setModal(true);
+          }}
+          className="text-xs font-semibold text-primary-600"
+        >
+          View
+        </button>
 
+        <span className="text-slate-200 mx-1">|</span>
+
+        <button
+          onClick={() => downloadPayslip(p)}
+          className="text-xs font-semibold text-slate-500"
+        >
+          Download
+        </button>
+      </div>
+    ),
+  },
+];
   return (
     <div className="space-y-6 animate-fade-in">
       {loading && (
@@ -73,10 +154,14 @@ export default function PayrollManagement() {
           { label: 'Total Deductions', value: formatCurrency(totalDeductions), icon: FileText, color: 'bg-red-100 text-red-600' },
           { label: 'Payslips Generated', value: payslips.filter(p => p.status === 'generated').length.toString(), icon: FileText, color: 'bg-amber-100 text-amber-600' },
         ].map(s => (
-          <div key={s.label} className="stat-card">
-            <div className={`stat-icon ${s.color}`}><s.icon size={22} /></div>
-            <div><p className="text-xl font-black text-slate-900">{s.value}</p><p className="text-sm text-slate-500 font-medium">{s.label}</p></div>
-          </div>
+           <StatCard
+              title={s.label}
+              value={s.value}
+              icon={<s.icon size={20} />}
+             
+            
+              color={s.color}
+            />
         ))}
       </div>
 
@@ -91,69 +176,36 @@ export default function PayrollManagement() {
             { label: 'Deductions', total: mockPayslips.reduce((s, p) => s + p.deductions, 0), color: 'text-red-600' },
             { label: 'Net Salary', total: mockPayslips.reduce((s, p) => s + p.netSalary, 0), color: 'text-primary-600' },
           ].map(item => (
-            <div key={item.label} className="p-4 bg-slate-50 rounded-xl">
-              <p className={`text-lg font-black ${item.color}`}>{formatCurrency(item.total)}</p>
-              <p className="text-xs text-slate-500 mt-1 font-medium">{item.label}</p>
-            </div>
+            // <div key={item.label} className="p-4 bg-slate-50 rounded-xl">
+            //   <p className={`text-lg font-black ${item.color}`}>{formatCurrency(item.total)}</p>
+            //   <p className="text-xs text-slate-500 mt-1 font-medium">{item.label}</p>
+            // </div>
+             <StatCard
+                          title={item.label}
+                          value={item.total}
+                         
+                          color={item.color}
+                        />
           ))}
         </div>
       </div>
+<div className="card p-0 overflow-hidden">
+  <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+    <h3 className="font-bold text-slate-900">Payslips</h3>
 
-      {/* Payslips Table */}
-      <div className="card p-0 overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="font-bold text-slate-900">Payslips</h3>
-          <select className="input max-w-[160px] py-2">
-            <option>January 2024</option>
-            <option>December 2023</option>
-          </select>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50 border-b border-slate-100">
-              <tr>
-                <th className="table-header">Employee</th>
-                <th className="table-header">Basic</th>
-                <th className="table-header">HRA</th>
-                <th className="table-header">Allowances</th>
-                <th className="table-header">Deductions</th>
-                <th className="table-header">Net Salary</th>
-                <th className="table-header">Status</th>
-                <th className="table-header">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {payslips.map(p => (
-                <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="table-cell">
-                    <div className="flex items-center gap-3">
-                      <Avatar name={p.employeeName} size="sm" />
-                      <div>
-                        <p className="font-semibold text-slate-900 text-sm">{p.employeeName}</p>
-                        <p className="text-xs text-slate-400">{p.employeeId}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="table-cell font-medium">{formatCurrency(p.basicSalary)}</td>
-                  <td className="table-cell text-blue-600 font-medium">{formatCurrency(p.hra)}</td>
-                  <td className="table-cell text-emerald-600 font-medium">{formatCurrency(p.allowances)}</td>
-                  <td className="table-cell text-red-600 font-medium">-{formatCurrency(p.deductions)}</td>
-                  <td className="table-cell font-black text-slate-900 text-base">{formatCurrency(p.netSalary)}</td>
-                  <td className="table-cell"><Badge status={p.status} /></td>
-                  <td className="table-cell">
-                    <div className="flex gap-1">
-                      <button onClick={() => { setSelected(p); setModal(true); }} className="text-xs font-semibold text-primary-600 hover:text-primary-700">View</button>
-                      <span className="text-slate-200 mx-1">|</span>
-                      <button onClick={() => downloadPayslip(p)} className="text-xs font-semibold text-slate-500 hover:text-slate-700">Download</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+    <select className="input max-w-[160px] py-2">
+      <option>January 2024</option>
+      <option>December 2023</option>
+    </select>
+  </div>
 
+  <Table
+    columns={columns}
+    data={payslips}
+    rowsPerPage={2}
+    emptyMessage="No payslips available"
+  />
+</div>
       {selected && (
         <Modal isOpen={modal} onClose={() => setModal(false)} title="Payslip Details">
           <div className="space-y-4">

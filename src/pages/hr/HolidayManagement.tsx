@@ -7,6 +7,8 @@ import ConfirmDialog from '../../components/shared/ConfirmDialog';
 import Badge from '../../components/shared/Badge';
 import { formatDate, generateId } from '../../utils/helpers';
 import Button from '../../components/shared/Button';
+import InputField from '../../components/shared/InputField';
+import Select from '../../components/shared/Select';
 export default function HolidayManagement() {
   const [holidays, setHolidays] = useState<Holiday[]>(mockHolidays);
   const [modal, setModal] = useState<'add' | 'edit' | null>(null);
@@ -80,16 +82,36 @@ export default function HolidayManagement() {
 
       <Modal isOpen={modal !== null} onClose={() => setModal(null)} title={modal === 'add' ? 'Add Holiday' : 'Edit Holiday'}>
         <div className="space-y-4">
-          <div><label className="label">Holiday Name *</label><input className="input" value={form.name || ''} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
-          <div><label className="label">Date *</label><input type="date" className="input" value={form.date || ''} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
-          <div><label className="label">Type</label>
-            <select className="input" value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value as Holiday['type'] }))}>
-              <option value="national">National</option>
-              <option value="regional">Regional</option>
-              <option value="company">Company</option>
-            </select>
+      <InputField
+  label="Holiday Name *"
+  value={form.name || ''}
+  onChange={(e) => setForm(p => ({ ...p, name: e.target.value }))}
+/>
+<InputField
+  label="Date *"
+  type="date"
+  value={form.date || ''}
+  onChange={(e) => setForm(p => ({ ...p, date: e.target.value }))}
+/>
+          <div>
+           <Select
+  label="Type"
+  value={form.type || "national"}
+  onChange={(value) =>
+    setForm((p) => ({ ...p, type: value as Holiday["type"] }))
+  }
+  options={[
+    { label: "National", value: "national" },
+    { label: "Regional", value: "regional" },
+    { label: "Company", value: "company" },
+  ]}
+/>
           </div>
-          <div><label className="label">Description</label><input className="input" value={form.description || ''} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></div>
+       <InputField
+  label="Description"
+  value={form.description || ''}
+  onChange={(e) => setForm(p => ({ ...p, description: e.target.value }))}
+/>
         </div>
         <div className="flex gap-3 mt-6">
           <Button onClick={() => setModal(null)} className="btn-secondary flex-1 justify-center">Cancel</Button>
