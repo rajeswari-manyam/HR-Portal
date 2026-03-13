@@ -31,7 +31,6 @@ export const loginUser = async (identifier: string, password: string) => {
 
     const body = new URLSearchParams();
 
-    // Detect if input is an email or Employee ID
     const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
     if (isEmail) {
         body.append("email", identifier);

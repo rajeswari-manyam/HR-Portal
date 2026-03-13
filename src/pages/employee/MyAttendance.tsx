@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { formatDate } from '../../utils/helpers';
 import Badge from '../../components/shared/Badge';
 import Table from '../../components/shared/Table';
-import { todayKey, sessionKey } from '../../context/AuthContext';
-import { markAttendance, getAttendance } from "../../service/attendance.service";
+import { getAttendance, calcWorkHours } from '../../service/attendance.service';
 import { useAuth } from '../../context/AuthContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -15,77 +14,18 @@ interface AttendanceRecord {
   checkIn?: string;
   checkOut?: string;
   workHours?: number;
-  isLive?: boolean;
 }
 
-// ── Live today row builder ────────────────────────────────────────────────────
-function getTodayRow(employeeId: string): AttendanceRecord | null {
-  const raw = localStorage.getItem(sessionKey(employeeId)); // ✅ scoped key
-  if (!raw) return null;
-  const stored = JSON.parse(raw);
-  if (stored.date !== todayKey()) return null;
-
-  const accSec = stored.accumulatedSeconds || 0;
-  const liveSec = stored.loginAt
-    ? Math.floor((Date.now() - stored.loginAt) / 1000)
-    : 0;
-  const totalSec = accSec + liveSec;
-  const hours = Math.floor(totalSec / 3600);
-  const workHours = parseFloat((totalSec / 3600).toFixed(1));
-
-  const status =
-    totalSec === 0 ? 'absent' :
-      hours < 4 ? 'half-day' :
-        hours < 6 ? 'late' :
-          'present';
-
-  const checkInStr = stored.firstLoginAt
-    ? new Date(stored.firstLoginAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : stored.loginAt
-      ? new Date(stored.loginAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : '--:--';
-
-  return {
-    _id: 'today-live',
-    employeeId,
-    date: todayKey(),
-    status,
-    checkIn: checkInStr,
-    checkOut: stored.loginAt ? undefined : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    workHours,
-    isLive: !!stored.loginAt,
-  };
-}
-
-// ── Live clock ────────────────────────────────────────────────────────────────
-function LiveHours({ employeeId }: { employeeId: string }) {
-  const [sec, setSec] = useState(0);
-
-  useEffect(() => {
-    const tick = () => {
-      const raw = localStorage.getItem(sessionKey(employeeId)); // ✅ scoped key
-      if (!raw) return;
-      const s = JSON.parse(raw);
-      if (s.date !== todayKey()) return;
-      const acc = s.accumulatedSeconds || 0;
-      const live = s.loginAt ? Math.floor((Date.now() - s.loginAt) / 1000) : 0;
-      setSec(acc + live);
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [employeeId]);
-
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  const pad = (n: number) => String(n).padStart(2, '0');
-
-  return (
-    <span className="font-mono text-emerald-600 font-bold text-sm">
-      {pad(h)}:{pad(m)}:{pad(s)}
-    </span>
-  );
+// ── Format "09:05" → "09:05 AM" ──────────────────────────────────────────────
+function fmt12(time?: string): string {
+  if (!time) return '—';
+  if (/AM|PM/i.test(time)) return time;
+  const [hStr, mStr] = time.split(':');
+  let h = parseInt(hStr, 10);
+  const m = mStr ?? '00';
+  const period = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${String(h).padStart(2, '0')}:${m} ${period}`;
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
@@ -93,73 +33,100 @@ export default function MyAttendance() {
   const { user } = useAuth();
   const employeeId = user?.employeeId ?? '';
 
-  const [apiRows, setApiRows] = useState<AttendanceRecord[]>([]);
-  const [todayRow, setTodayRow] = useState<AttendanceRecord | null>(() => getTodayRow(employeeId));
+  const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // ✅ Fetch all attendance from API
+  // ── Fetch attendance by employeeId ────────────────────────────────────────
   useEffect(() => {
     if (!employeeId) return;
-
-    const fetchAttendance = async () => {
+    (async () => {
       try {
         setIsLoading(true);
         const data = await getAttendance(employeeId);
-        const past = (data as AttendanceRecord[]).filter(r => r.date !== todayKey());
-        setApiRows(past);
-      } catch (error) {
-        console.error('Failed to fetch attendance:', error);
+        const enriched = (data as AttendanceRecord[])
+          .map(r => ({
+            ...r,
+            workHours: r.workHours ?? calcWorkHours(r.checkIn, r.checkOut),
+          }))
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setRecords(enriched);
+      } catch (err) {
+        console.error('Failed to fetch attendance:', err);
       } finally {
         setIsLoading(false);
       }
-    };
-
-    fetchAttendance();
+    })();
   }, [employeeId]);
 
-  // ✅ Mark attendance once per day
-  useEffect(() => {
-    if (!employeeId) return;
-
-    const alreadyMarked = localStorage.getItem(`attendance_marked_${todayKey()}_${employeeId}`);
-    if (alreadyMarked) return;
-     
-    const sendAttendance = async () => {
-      try {
-        await markAttendance({ employeeId, date: todayKey(), status: 'present' });
-        localStorage.setItem(`attendance_marked_${todayKey()}_${employeeId}`, 'true');
-      } catch (error) {
-        console.error('Attendance Error:', error);
-
-      }
-    };
-     console.log("Marking attendance");
-    sendAttendance();
-  }, [employeeId]);
-
-  // Refresh live today row every minute
-  useEffect(() => {
-    const id = setInterval(() => setTodayRow(getTodayRow(employeeId)), 60_000);
-    return () => clearInterval(id);
-  }, [employeeId]);
-
-  // ✅ Merge: live today row on top + past API rows
-  const allRows: AttendanceRecord[] = todayRow ? [todayRow, ...apiRows] : apiRows;
-
+  // ── Stats ─────────────────────────────────────────────────────────────────
   const stats = {
-    present: allRows.filter(a => a.status === 'present').length,
-    absent: allRows.filter(a => a.status === 'absent').length,
-    late: allRows.filter(a => a.status === 'late').length,
-    halfDay: allRows.filter(a => a.status === 'half-day').length,
+    present: records.filter(r => r.status === 'present').length,
+    absent: records.filter(r => r.status === 'absent').length,
+    late: records.filter(r => r.status === 'late').length,
+    halfDay: records.filter(r => r.status === 'half-day').length,
   };
 
-  const statCards = [
-    { label: 'Present', value: stats.present, color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-    { label: 'Absent', value: stats.absent, color: 'bg-red-50 text-red-700 border-red-200' },
-    { label: 'Late', value: stats.late, color: 'bg-amber-50 text-amber-700 border-amber-200' },
-    { label: 'Half Day', value: stats.halfDay, color: 'bg-blue-50 text-blue-700 border-blue-200' },
+  // ── Table columns ─────────────────────────────────────────────────────────
+  const columns = [
+    {
+      header: 'Date',
+      render: (r: AttendanceRecord) => (
+        <span className="text-sm font-medium">{formatDate(r.date)}</span>
+      ),
+    },
+    {
+      header: 'Status',
+      render: (r: AttendanceRecord) => <Badge status={r.status} />,
+    },
+    {
+      header: 'Check In',
+      render: (r: AttendanceRecord) =>
+        r.checkIn ? (
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
+            <span className="text-sm font-mono font-semibold text-emerald-700">
+              {fmt12(r.checkIn)}
+            </span>
+          </div>
+        ) : (
+          <span className="text-slate-300 text-sm">—</span>
+        ),
+    },
+    {
+      header: 'Check Out',
+      render: (r: AttendanceRecord) =>
+        r.checkOut ? (
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0" />
+            <span className="text-sm font-mono font-semibold text-rose-700">
+              {fmt12(r.checkOut)}
+            </span>
+          </div>
+        ) : (
+          <span className="text-slate-300 text-sm">—</span>
+        ),
+    },
+    {
+      header: 'Hours Worked',
+      render: (r: AttendanceRecord) =>
+        r.workHours !== undefined ? (
+          <span
+            className={`text-sm font-bold ${r.workHours >= 8
+                ? 'text-emerald-600'
+                : r.workHours >= 4
+                  ? 'text-amber-500'
+                  : 'text-red-500'
+              }`}
+          >
+            {r.workHours}h
+          </span>
+        ) : (
+          <span className="text-slate-300 text-sm">—</span>
+        ),
+    },
   ];
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
@@ -167,8 +134,14 @@ export default function MyAttendance() {
         <p className="page-subtitle">Track your daily attendance</p>
       </div>
 
+      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map(s => (
+        {[
+          { label: 'Present', value: stats.present, color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+          { label: 'Absent', value: stats.absent, color: 'bg-red-50 text-red-700 border-red-200' },
+          { label: 'Late', value: stats.late, color: 'bg-amber-50 text-amber-700 border-amber-200' },
+          { label: 'Half Day', value: stats.halfDay, color: 'bg-blue-50 text-blue-700 border-blue-200' },
+        ].map(s => (
           <div key={s.label} className={`border rounded-2xl px-5 py-4 ${s.color}`}>
             <p className="text-xs font-bold uppercase tracking-wider opacity-70">{s.label}</p>
             <p className="text-3xl font-black mt-1">{s.value}</p>
@@ -176,6 +149,7 @@ export default function MyAttendance() {
         ))}
       </div>
 
+      {/* Table */}
       <div className="card p-0 overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
@@ -183,49 +157,9 @@ export default function MyAttendance() {
           </div>
         ) : (
           <Table
-            columns={[
-              {
-                header: 'Date',
-                render: (r: AttendanceRecord) => (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{formatDate(r.date)}</span>
-                    {r.isLive && (
-                      <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-600 text-[10px] font-bold rounded-full">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        TODAY
-                      </span>
-                    )}
-                  </div>
-                ),
-              },
-              {
-                header: 'Status',
-                render: (r: AttendanceRecord) => <Badge status={r.status} />,
-              },
-              {
-                header: 'Check-in',
-                render: (r: AttendanceRecord) => (
-                  <span className="text-sm font-mono">{r.checkIn || '—'}</span>
-                ),
-              },
-              {
-                header: 'Check-out',
-                render: (r: AttendanceRecord) => (
-                  r.isLive
-                    ? <span className="text-xs text-gray-400 italic">Active session</span>
-                    : <span className="text-sm font-mono">{r.checkOut || '—'}</span>
-                ),
-              },
-              {
-                header: 'Hours Worked',
-                render: (r: AttendanceRecord) => (
-                  r.isLive
-                    ? <LiveHours employeeId={employeeId} /> // ✅ pass employeeId
-                    : <span className="text-sm">{r.workHours ? `${r.workHours}h` : '—'}</span>
-                ),
-              },
-            ]}
-            data={allRows}
+            columns={columns}
+            data={records}
+            emptyMessage="No attendance records found"
           />
         )}
       </div>

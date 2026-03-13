@@ -49,7 +49,7 @@ export const mockPayslips: Payslip[] = [
   { id: '2', employeeId: 'EMP001', employeeName: 'Arjun Sharma', month: 'December', year: 2023, basicSalary: 95000, hra: 28500, allowances: 12000, deductions: 18500, netSalary: 117000, status: 'generated', generatedOn: '2023-12-31' },
   { id: '3', employeeId: 'EMP002', employeeName: 'Priya Nair', month: 'January', year: 2024, basicSalary: 140000, hra: 42000, allowances: 18000, deductions: 27500, netSalary: 172500, status: 'generated', generatedOn: '2024-01-31' },
   { id: '4', employeeId: 'EMP003', employeeName: 'Rahul Verma', month: 'January', year: 2024, basicSalary: 80000, hra: 24000, allowances: 10000, deductions: 15500, netSalary: 98500, status: 'generated', generatedOn: '2024-01-31' },
-   { id: '5', employeeId: 'EMP005', employeeName: 'Audit', month: 'January', year: 2024, basicSalary: 80000, hra: 24000, allowances: 10000, deductions: 15500, netSalary: 98500, status: 'generated', generatedOn: '2024-01-31' },
+  { id: '5', employeeId: 'EMP005', employeeName: 'Audit', month: 'January', year: 2024, basicSalary: 80000, hra: 24000, allowances: 10000, deductions: 15500, netSalary: 98500, status: 'generated', generatedOn: '2024-01-31' },
 ];
 
 export const mockJobs: JobPosting[] = [
@@ -82,17 +82,8 @@ export const mockAnnouncements: Announcement[] = [
   { id: '3', title: 'IT Security Training Mandatory', content: 'All employees must complete the annual IT security awareness training by January 31. Access the training portal from your dashboard.', createdBy: 'Vikram Mehta', createdAt: '2024-01-10', priority: 'high', targetRole: 'all' },
 ];
 
-export const mockHolidays: Holiday[] = [
-  { id: '1', name: 'Republic Day', date: '2024-01-26', type: 'national' },
-  { id: '2', name: 'Holi', date: '2024-03-25', type: 'national' },
-  { id: '3', name: 'Good Friday', date: '2024-03-29', type: 'national' },
-  { id: '4', name: 'Eid ul-Fitr', date: '2024-04-10', type: 'national' },
-  { id: '5', name: 'Independence Day', date: '2024-08-15', type: 'national' },
-  { id: '6', name: 'Gandhi Jayanti', date: '2024-10-02', type: 'national' },
-  { id: '7', name: 'Diwali', date: '2024-11-01', type: 'national' },
-  { id: '8', name: 'Christmas', date: '2024-12-25', type: 'national' },
-  { id: '9', name: 'Company Foundation Day', date: '2024-06-15', type: 'company', description: 'Annual celebration of company founding' },
-];
+// ✅ Holidays are now loaded from API — mock list is intentionally empty
+export const mockHolidays: Holiday[] = [];
 
 export const mockNotifications: Notification[] = [
   { id: '1', title: 'Leave Request Approved', message: 'Your sick leave request for Jan 18 has been approved.', type: 'success', read: false, createdAt: '2024-01-17T10:30:00' },

@@ -1,572 +1,631 @@
-import { useState, useEffect } from 'react';
-import {
-  Plus, Pencil, Trash2, Eye, UserCheck, UserX,
-  Phone, Mail, Loader2
-} from 'lucide-react';
-import {
-  getEmployees, createEmployee, updateEmployee, deleteEmployee,
-} from "../../service/Employee.service";
-import { DEPARTMENT_DATA, getRolesByDepartment } from "../../data/department";
+import { CalendarCheck, CalendarDays, Gift, Clock, Timer, LogIn, LogOut } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { formatDate } from '../../utils/helpers';
 import Avatar from '../../components/shared/Avatar';
 import Badge from '../../components/shared/Badge';
-import SearchInput from '../../components/shared/SearchInput';
-import Modal from '../../components/shared/Modal';
-import ConfirmDialog from '../../components/shared/ConfirmDialog';
-import { formatDate, formatCurrency } from '../../utils/helpers';
-import Button from '../../components/shared/Button';
-import InputField from '../../components/shared/InputField';
-import Table from '../../components/shared/Table';
+import StatCard from '../../components/shared/StateCard';
+import { useState, useEffect, useRef } from 'react';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-interface Employee {
+// ─── API imports ──────────────────────────────────────────────────────────────
+import { getLeaveBalance, getAllLeaves } from "../../service/leave.service";
+import { getAttendance } from "../../service/attendance.service";
+import { getAllHolidays } from "../../service/holidays.service";
+import { getAnnouncementsByRole } from "../../service/announcement.service";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface TrackerState {
+  date: string;
+  accumulatedSeconds: number;
+  sessionStart: number | null;
+  checkInTime: string | null;
+  lastCheckOut: string | null;
+  isClockedIn: boolean;
+}
+
+interface LeaveBalance {
+  leaveType: string;
+  total: number;
+  used: number;
+  remaining: number;
+}
+
+interface AttendanceRecord {
+  id: string;
+  date: string;
+  status: string;
+  checkIn?: string;
+  checkOut?: string;
+}
+
+interface Holiday {
   _id: string;
-  employeeId: string;
-  fullName: string;
-  email: string;
-  phone: string;
-  department: string;
-  designation: string;
-  joiningDate: string;
-  salary: number;
-  address: string;
-  emergencyContact: string;
-  status: string;
-  gender: string;
-  dateOfBirth: string;
-  bloodGroup?: string;
-  manager?: string;
+  name: string;
+  date: string;
+  type: string;
 }
 
-interface FormState {
-  employeeId: string;
-  fullName: string;
-  email: string;
-  phone: string;
-  department: string;
-  designation: string;
-  joiningDate: string;
-  salary: number;
-  address: string;
-  emergencyContact: string;
-  status: string;
-  gender: string;
-  dateOfBirth: string;
-  bloodGroup: string;
+interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  priority: string;
+  createdAt: string;
 }
 
-const DEFAULT_FORM: FormState = {
-  employeeId: '', fullName: '', email: '', phone: '',
-  department: '', designation: '', joiningDate: '',
-  salary: 0, address: '', emergencyContact: '',
-  status: 'active', gender: '', dateOfBirth: '', bloodGroup: '',
-};
+// ─── Time Tracker Hook ────────────────────────────────────────────────────────
+function useDailyTimeTracker() {
+  const STORAGE_KEY = 'employee_time_tracker';
+  // Separate key that only ever stores YYYY-MM-DD of the last known day.
+  // We compare this on every load — if it differs, we nuke everything.
+  const DATE_KEY = 'employee_time_tracker_date';
 
-export default function EmployeeManagement() {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
-  const [deptFilter, setDeptFilter] = useState('');
-  const [modal, setModal] = useState<'add' | 'edit' | 'view' | null>(null);
-  const [selected, setSelected] = useState<Employee | null>(null);
-  const [form, setForm] = useState<FormState>(DEFAULT_FORM);
-  const [saving, setSaving] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [activeTab, setActiveTab] = useState('personal');
-  const [error, setError] = useState('');
+  const getTodayKey = (): string => new Date().toISOString().split('T')[0];
 
-  // ✅ Roles update dynamically based on selected department
-  const availableRoles = getRolesByDepartment(form.department);
+  const loadState = (): TrackerState | null => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw) as TrackerState;
+    } catch {
+      return null;
+    }
+  };
 
-  // ✅ GET all employees on mount
+  const saveState = (state: TrackerState): void => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(DATE_KEY, state.date);
+  };
+
+  const makeFresh = (today: string): TrackerState => {
+    const fresh: TrackerState = {
+      date: today,
+      accumulatedSeconds: 0,
+      sessionStart: null,
+      checkInTime: null,
+      lastCheckOut: null,
+      isClockedIn: false,
+    };
+    saveState(fresh);
+    return fresh;
+  };
+
+  const initState = (): TrackerState => {
+    const today = getTodayKey();
+
+    // Primary guard: the dedicated date key must match today exactly.
+    // This catches every cross-midnight scenario regardless of what
+    // the tracker object itself says (clocked-in or out).
+    const lastKnownDate = localStorage.getItem(DATE_KEY);
+    if (!lastKnownDate || lastKnownDate !== today) {
+      return makeFresh(today);
+    }
+
+    const saved = loadState();
+    if (!saved || saved.date !== today) {
+      return makeFresh(today);
+    }
+
+    // Extra guard: if sessionStart is from a previous calendar day, reset.
+    if (saved.sessionStart !== null) {
+      const sessionDate = new Date(saved.sessionStart).toISOString().split('T')[0];
+      if (sessionDate !== today) {
+        return makeFresh(today);
+      }
+    }
+
+    return saved;
+  };
+
+  const [tracker, setTracker] = useState<TrackerState>(initState);
+  const [displaySeconds, setDisplaySeconds] = useState<number>(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const computeDisplay = (t: TrackerState): number => {
+    if (t.isClockedIn && t.sessionStart !== null) {
+      const today = getTodayKey();
+      const sessionDate = new Date(t.sessionStart).toISOString().split('T')[0];
+      // If sessionStart is from a previous day, don't count cross-midnight seconds
+      if (sessionDate !== today) return t.accumulatedSeconds;
+      const liveSecs = Math.floor((Date.now() - t.sessionStart) / 1000);
+      return t.accumulatedSeconds + liveSecs;
+    }
+    return t.accumulatedSeconds;
+  };
+
+  // Track the date so we can detect midnight rollover
+  const trackerDateRef = useRef<string>(getTodayKey());
+
   useEffect(() => {
+    setDisplaySeconds(computeDisplay(tracker));
+    if (tracker.isClockedIn) {
+      intervalRef.current = setInterval(() => {
+        // Midnight reset: if the calendar date has changed, start fresh
+        const today = getTodayKey();
+        if (today !== trackerDateRef.current) {
+          trackerDateRef.current = today;
+          if (intervalRef.current !== null) clearInterval(intervalRef.current);
+          setTracker(makeFresh(today));
+          setDisplaySeconds(0);
+          return;
+        }
+        setDisplaySeconds((prev: number) => prev + 1);
+      }, 1000);
+    }
+    return () => {
+      if (intervalRef.current !== null) clearInterval(intervalRef.current);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const clockIn = (): void => {
+    const now = Date.now();
+    const timeStr = new Date(now).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    setTracker((prev: TrackerState) => {
+      const updated: TrackerState = {
+        ...prev,
+        isClockedIn: true,
+        sessionStart: now,
+        checkInTime: prev.checkInTime ?? timeStr,
+      };
+      saveState(updated);
+      return updated;
+    });
+    if (intervalRef.current !== null) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      setDisplaySeconds((prev: number) => prev + 1);
+    }, 1000);
+  };
+
+  const clockOut = (): void => {
+    const now = Date.now();
+    const timeStr = new Date(now).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    setTracker((prev: TrackerState) => {
+      const liveSecs = prev.sessionStart !== null ? Math.floor((now - prev.sessionStart) / 1000) : 0;
+      const updated: TrackerState = {
+        ...prev,
+        isClockedIn: false,
+        accumulatedSeconds: prev.accumulatedSeconds + liveSecs,
+        sessionStart: null,
+        lastCheckOut: timeStr,
+      };
+      saveState(updated);
+      return updated;
+    });
+    if (intervalRef.current !== null) clearInterval(intervalRef.current);
+  };
+
+  const formatTime = (totalSecs: number): string => {
+    const h = Math.floor(totalSecs / 3600);
+    const m = Math.floor((totalSecs % 3600) / 60);
+    const s = totalSecs % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  return {
+    isClockedIn: tracker.isClockedIn,
+    checkInTime: tracker.checkInTime,
+    lastCheckOut: tracker.lastCheckOut,
+    displayTime: formatTime(displaySeconds),
+    displaySeconds,
+    clockIn,
+    clockOut,
+  };
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+export default function EmployeeDashboard() {
+  const { user } = useAuth();
+  const {
+    isClockedIn,
+    checkInTime,
+    lastCheckOut,
+    displayTime,
+    displaySeconds,
+    clockIn,
+    clockOut,
+  } = useDailyTimeTracker();
+
+  // ── API state ──
+  const [leaveBalance, setLeaveBalance] = useState<LeaveBalance[]>([]);
+  const [myAttendance, setMyAttendance] = useState<AttendanceRecord[]>([]);
+  const [upcomingHolidays, setUpcomingHolidays] = useState<Holiday[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [daysPresent, setDaysPresent] = useState(0);
+  const [annualLeaveRemaining, setAnnualLeaveRemaining] = useState(0);
+  const [upcomingHolidayCount, setUpcomingHolidayCount] = useState(0);
+
+  // ── Fetch all data on mount ──
+  useEffect(() => {
+    if (!user?.employeeId) return;
+
     const fetchAll = async () => {
+      setLoading(true);
       try {
-        setIsLoading(true);
-        const data = await getEmployees();
-        console.log('✅ GET all employees:', data);
-        setEmployees(data as Employee[]);
-      } catch (err) {
-        console.error('❌ Failed to fetch employees:', err);
+        const [balanceData, attendanceData, holidaysData, announcementsData] =
+          await Promise.allSettled([
+            getLeaveBalance(user.employeeId),
+            getAttendance(user.employeeId),
+            getAllHolidays(),
+            getAnnouncementsByRole(user.role ?? 'employee'),
+          ]);
+
+        // Leave balance
+        if (balanceData.status === 'fulfilled') {
+          const raw = balanceData.value;
+          // API may return array or object with leaveBalances key
+          const balArr: LeaveBalance[] = Array.isArray(raw)
+            ? raw
+            : raw.leaveBalances ?? raw.data ?? [];
+          setLeaveBalance(balArr);
+          const annual = balArr.find(
+            (b: LeaveBalance) =>
+              b.leaveType?.toLowerCase().includes('annual') ||
+              b.leaveType?.toLowerCase().includes('casual')
+          );
+          setAnnualLeaveRemaining(annual?.remaining ?? 0);
+        }
+
+        // Attendance — last 5 records, count present this month
+        if (attendanceData.status === 'fulfilled') {
+          const raw = attendanceData.value;
+          const arr: AttendanceRecord[] = Array.isArray(raw)
+            ? raw
+            : raw.attendance ?? raw.data ?? [];
+
+          // Sort descending by date
+          const sorted = [...arr].sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+          setMyAttendance(sorted.slice(0, 5));
+
+          // Count present days this month
+          const now = new Date();
+          const presentThisMonth = arr.filter((a) => {
+            const d = new Date(a.date);
+            return (
+              d.getMonth() === now.getMonth() &&
+              d.getFullYear() === now.getFullYear() &&
+              a.status === 'present'
+            );
+          });
+          setDaysPresent(presentThisMonth.length);
+        }
+
+        // Holidays — upcoming (today onwards), max 4
+        if (holidaysData.status === 'fulfilled') {
+          const raw = holidaysData.value as any;
+          const arr: Holiday[] = Array.isArray(raw)
+            ? raw
+            : raw.holidays ?? raw.data ?? [];
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const upcoming = arr
+            .filter((h) => new Date(h.date) >= today)
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+          // Count holidays in next 30 days
+          const in30 = new Date(today);
+          in30.setDate(in30.getDate() + 30);
+          setUpcomingHolidayCount(upcoming.filter((h) => new Date(h.date) <= in30).length);
+          setUpcomingHolidays(upcoming.slice(0, 4));
+        }
+
+        // Announcements — latest 2
+        if (announcementsData.status === 'fulfilled') {
+          const raw = announcementsData.value;
+          const arr: Announcement[] = Array.isArray(raw)
+            ? raw
+            : raw.announcements ?? raw.data ?? [];
+          const sorted = [...arr].sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+          setAnnouncements(sorted.slice(0, 2));
+        }
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
+
     fetchAll();
-  }, []);
+  }, [user?.employeeId]);
 
-  const filtered = employees.filter(e => {
-    const matchSearch =
-      e.fullName.toLowerCase().includes(search.toLowerCase()) ||
-      e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
-      e.email.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = filter === 'all' || e.status === filter;
-    const matchDept = !deptFilter || e.department === deptFilter;
-    return matchSearch && matchStatus && matchDept;
-  });
+  const hours = Math.floor(displaySeconds / 3600);
+  const timerColor =
+    hours >= 8
+      ? 'text-emerald-600'
+      : hours >= 4
+        ? 'text-amber-600'
+        : 'text-blue-600';
 
-  const openAdd = () => {
-    setForm({
-      ...DEFAULT_FORM,
-      employeeId: `EMP${String(employees.length + 1).padStart(3, '0')}`,
-    });
-    setError('');
-    setModal('add');
-  };
-
-  const openEdit = (e: Employee) => {
-    setSelected(e);
-    setForm({
-      employeeId: e.employeeId, fullName: e.fullName,
-      email: e.email, phone: e.phone,
-      department: e.department, designation: e.designation,
-      joiningDate: e.joiningDate, salary: e.salary,
-      address: e.address, emergencyContact: e.emergencyContact,
-      status: e.status, gender: e.gender,
-      dateOfBirth: e.dateOfBirth, bloodGroup: e.bloodGroup || '',
-    });
-    setError('');
-    setModal('edit');
-  };
-
-  const openView = (e: Employee) => {
-    setSelected(e);
-    setActiveTab('personal');
-    setModal('view');
-  };
-
-  const closeModal = () => {
-    setModal(null);
-    setSelected(null);
-    setForm(DEFAULT_FORM);
-    setError('');
-  };
-
-  const update = (key: keyof FormState, val: string | number) => {
-    setForm(prev => {
-      const next = { ...prev, [key]: val };
-      // ✅ Reset designation when department changes
-      if (key === 'department') next.designation = '';
-      return next;
-    });
-  };
-
-  // ✅ POST create employee
-  const handleAdd = async () => {
-    if (!form.fullName.trim() || !form.employeeId.trim()) {
-      setError('Employee ID and Full Name are required.');
-      return;
-    }
-    setError('');
-    setSaving(true);
-    try {
-      const created = await createEmployee(form);
-      console.log('✅ POST create employee:', created);
-      setEmployees(prev => [...prev, created as Employee]);
-      closeModal();
-    } catch (err) {
-      console.error('❌ Failed to create employee:', err);
-      setError('Failed to add employee. Please try again.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ✅ PUT update employee
-  const handleUpdate = async () => {
-    if (!selected || !form.fullName.trim()) {
-      setError('Full Name is required.');
-      return;
-    }
-    setError('');
-    setSaving(true);
-    try {
-      const updated = await updateEmployee(selected._id, form);
-      console.log('✅ PUT update employee:', updated);
-      setEmployees(prev =>
-        prev.map(e => e._id === selected._id ? { ...e, ...updated } as Employee : e)
-      );
-      closeModal();
-    } catch (err) {
-      console.error('❌ Failed to update employee:', err);
-      setError('Failed to update employee. Please try again.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ✅ DELETE employee
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    setDeleting(true);
-    try {
-      const result = await deleteEmployee(deleteId);
-      console.log('✅ DELETE employee:', result);
-      setEmployees(prev => prev.filter(e => e._id !== deleteId));
-      setDeleteId(null);
-    } catch (err) {
-      console.error('❌ Failed to delete employee:', err);
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  // ✅ Toggle status via PUT
-  const toggleStatus = async (emp: Employee) => {
-    const newStatus = emp.status === 'active' ? 'inactive' : 'active';
-    try {
-      const updated = await updateEmployee(emp._id, { status: newStatus });
-      console.log('✅ Toggle status:', updated);
-      setEmployees(prev =>
-        prev.map(e => e._id === emp._id ? { ...e, status: newStatus } : e)
-      );
-    } catch (err) {
-      console.error('❌ Failed to toggle status:', err);
-    }
-  };
-
-  const columns = [
-    {
-      header: 'Employee',
-      render: (emp: Employee) => (
-        <div className="flex items-center gap-3">
-          <Avatar name={emp.fullName} size="sm" />
-          <div>
-            <p className="font-semibold text-slate-900 text-sm">{emp.fullName}</p>
-            <p className="text-xs text-slate-400">{emp.email}</p>
-          </div>
+  // ── Loading skeleton ──
+  if (loading) {
+    return (
+      <div className="space-y-6 animate-pulse">
+        <div className="card bg-gradient-to-r from-primary-600 to-primary-700 h-32" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="card h-24 bg-slate-100" />
+          ))}
         </div>
-      ),
-    },
-    {
-      header: 'ID',
-      render: (emp: Employee) => (
-        <span className="font-mono text-xs text-slate-500">{emp.employeeId}</span>
-      ),
-    },
-    { header: 'Department', render: (emp: Employee) => emp.department },
-    { header: 'Designation', render: (emp: Employee) => emp.designation },
-    { header: 'Joining Date', render: (emp: Employee) => formatDate(emp.joiningDate) },
-    { header: 'Salary', render: (emp: Employee) => formatCurrency(emp.salary) },
-    { header: 'Status', render: (emp: Employee) => <Badge status={emp.status} /> },
-    {
-      header: 'Actions',
-      render: (emp: Employee) => (
-        <div className="flex items-center gap-1">
-          <button onClick={() => openView(emp)} className="p-1 hover:text-primary-600 text-slate-400 transition-colors">
-            <Eye size={15} />
-          </button>
-          <button onClick={() => openEdit(emp)} className="p-1 hover:text-amber-600 text-slate-400 transition-colors">
-            <Pencil size={15} />
-          </button>
-          <button onClick={() => toggleStatus(emp)} className="p-1 hover:text-emerald-600 text-slate-400 transition-colors">
-            {emp.status === 'active' ? <UserX size={15} /> : <UserCheck size={15} />}
-          </button>
-          <button onClick={() => setDeleteId(emp._id)} className="p-1 hover:text-red-600 text-slate-400 transition-colors">
-            <Trash2 size={15} />
-          </button>
+        <div className="card h-48 bg-slate-100" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="card h-48 bg-slate-100" />
+          ))}
         </div>
-      ),
-    },
-  ];
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
-
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="page-title">Employees</h1>
-          <p className="page-subtitle">{filtered.length} of {employees.length} employees</p>
-        </div>
-        <Button onClick={openAdd} className="btn-primary">
-          <Plus size={16} /> Add Employee
-        </Button>
-      </div>
-
-      {/* Filters */}
-      <div className="card p-4">
-        <div className="flex flex-wrap gap-3 items-center">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search employees..." />
-          <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
-            {(['all', 'active', 'inactive'] as const).map(s => (
-              <button
-                key={s}
-                onClick={() => setFilter(s)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all capitalize
-                  ${filter === s ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                {s}
-              </button>
-            ))}
+      {/* Welcome */}
+      <div className="card bg-gradient-to-r from-primary-600 to-primary-700 text-white p-6">
+        <div className="flex items-center gap-4">
+          <Avatar name={user?.name ?? ''} size="xl" />
+          <div>
+            <h1 className="text-2xl font-black">
+              Welcome back, {user?.name?.split(' ')[0]}! 👋
+            </h1>
+            <p className="text-primary-200 mt-1">
+              {user?.designation} · {user?.department}
+            </p>
+            <div className="flex gap-3 mt-3">
+              <span className="px-3 py-1.5 bg-white/10 rounded-xl text-sm font-medium">
+                {user?.employeeId}
+              </span>
+              <span className="px-3 py-1.5 bg-white/10 rounded-xl text-sm font-medium">
+                Joined {formatDate(user?.joinDate ?? '')}
+              </span>
+            </div>
           </div>
-          {/* ✅ Department filter from departmentData */}
-          <select
-            className="input max-w-[180px] py-2"
-            value={deptFilter}
-            onChange={e => setDeptFilter(e.target.value)}
-          >
-            <option value="">All Departments</option>
-            {DEPARTMENT_DATA.map(d => (
-              <option key={d.id} value={d.name}>{d.name}</option>
-            ))}
-          </select>
         </div>
       </div>
 
-      {/* Table */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <div className="w-8 h-8 border-3 border-primary-600 border-t-transparent rounded-full animate-spin" />
+      {/* Quick stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          {
+            label: 'Days Present',
+            value: daysPresent.toString(),
+            sub: 'This month',
+            icon: CalendarCheck,
+            color: 'bg-emerald-100 text-emerald-600',
+          },
+          {
+            label: 'Leave Balance',
+            value: annualLeaveRemaining.toString(),
+            sub: 'Annual leave days',
+            icon: CalendarDays,
+            color: 'bg-blue-100 text-blue-600',
+          },
+          {
+            label: 'Upcoming Holiday',
+            value: upcomingHolidayCount.toString(),
+            sub: 'Next 30 days',
+            icon: Gift,
+            color: 'bg-rose-100 text-rose-600',
+          },
+          {
+            label: 'Time Worked Today',
+            value: displayTime,
+            sub: isClockedIn
+              ? '🟢 Currently clocked in'
+              : checkInTime
+                ? '⏹ Clocked out'
+                : 'Not started',
+            icon: Timer,
+            color: isClockedIn
+              ? 'bg-violet-100 text-violet-600'
+              : 'bg-slate-100 text-slate-500',
+          },
+        ].map((s) => (
+          <StatCard
+            key={s.label}
+            title={s.label}
+            value={s.value}
+            icon={<s.icon size={20} />}
+            change={s.sub}
+            color={s.color}
+          />
+        ))}
+      </div>
+
+      {/* Daily Time Tracker */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-slate-900">Today's Time Tracker</h3>
+          <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">
+            {new Date().toLocaleDateString('en-IN', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+            })}
+          </span>
         </div>
-      ) : (
-        <Table
-          columns={columns}
-          data={filtered}
-          rowsPerPage={5}
-          emptyMessage="No employees found"
-        />
-      )}
 
-      {/* Add / Edit Modal */}
-      <Modal
-        isOpen={modal === 'add' || modal === 'edit'}
-        onClose={closeModal}
-        title={modal === 'add' ? 'Add Employee' : 'Edit Employee'}
-        size="lg"
-      >
-        {error && (
-          <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm">
-            ⚠️ {error}
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-4">
-          <InputField
-            label="Employee ID"
-            value={form.employeeId}
-            onChange={e => update('employeeId', e.target.value)}
-          />
-          <InputField
-            label="Full Name *"
-            value={form.fullName}
-            onChange={e => update('fullName', e.target.value)}
-          />
-          <InputField
-            label="Email"
-            icon={<Mail size={16} />}
-            value={form.email}
-            onChange={e => update('email', e.target.value)}
-          />
-          <InputField
-            label="Phone"
-            icon={<Phone size={16} />}
-            value={form.phone}
-            onChange={e => update('phone', e.target.value)}
-          />
-
-          {/* ✅ Department — from departmentData.ts */}
-          <div className="space-y-1.5">
-            <label className="label">Department</label>
-            <select
-              className="input"
-              value={form.department}
-              onChange={e => update('department', e.target.value)}
+        <div className="flex flex-col sm:flex-row items-center gap-6">
+          {/* Timer display */}
+          <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 rounded-2xl p-6">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
+              Time Worked
+            </p>
+            <p
+              className={`text-4xl font-black font-mono tracking-tight ${timerColor} transition-colors duration-500`}
             >
-              <option value="">Select Department</option>
-              {DEPARTMENT_DATA.map(d => (
-                <option key={d.id} value={d.name}>{d.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* ✅ Designation — roles filtered by selected department */}
-          <div className="space-y-1.5">
-            <label className="label">Designation</label>
-            <select
-              className="input"
-              value={form.designation}
-              onChange={e => update('designation', e.target.value)}
-              disabled={!form.department}
-            >
-              <option value="">
-                {form.department ? 'Select Designation' : 'Select Department first'}
-              </option>
-              {availableRoles.map(role => (
-                <option key={role} value={role}>{role}</option>
-              ))}
-            </select>
-            {form.department && (
-              <p className="text-xs text-slate-400">
-                {availableRoles.length} roles available in {form.department}
-              </p>
+              {displayTime}
+            </p>
+            {isClockedIn && (
+              <span className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Live counting...
+              </span>
             )}
           </div>
 
-          <InputField
-            label="Joining Date"
-            type="date"
-            value={form.joiningDate}
-            onChange={e => update('joiningDate', e.target.value)}
-          />
-          <InputField
-            label="Salary (₹)"
-            type="number"
-            value={form.salary || ''}
-            onChange={e => update('salary', Number(e.target.value))}
-          />
-
-          {/* Gender */}
-          <div className="space-y-1.5">
-            <label className="label">Gender</label>
-            <select
-              className="input"
-              value={form.gender}
-              onChange={e => update('gender', e.target.value)}
-            >
-              <option value="">Select Gender</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-
-          <InputField
-            label="Date of Birth"
-            type="date"
-            value={form.dateOfBirth}
-            onChange={e => update('dateOfBirth', e.target.value)}
-          />
-          <InputField
-            label="Blood Group"
-            value={form.bloodGroup}
-            onChange={e => update('bloodGroup', e.target.value)}
-          />
-          <InputField
-            label="Emergency Contact"
-            value={form.emergencyContact}
-            onChange={e => update('emergencyContact', e.target.value)}
-          />
-
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-slate-700 mb-1">Address</label>
-            <textarea
-              rows={2}
-              className="input resize-none"
-              value={form.address}
-              onChange={e => update('address', e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="flex gap-3 mt-6">
-          <Button onClick={closeModal} className="btn-secondary flex-1 justify-center">
-            Cancel
-          </Button>
-          <Button
-            onClick={modal === 'add' ? handleAdd : handleUpdate}
-            disabled={saving}
-            className="btn-primary flex-1 justify-center"
-          >
-            {saving
-              ? <><Loader2 size={15} className="animate-spin" /> {modal === 'add' ? 'Adding...' : 'Saving...'}</>
-              : modal === 'add' ? 'Add Employee' : 'Save Changes'
-            }
-          </Button>
-        </div>
-      </Modal>
-
-      {/* View Modal */}
-      {selected && (
-        <Modal isOpen={modal === 'view'} onClose={closeModal} title="Employee Profile" size="lg">
-          <div className="flex items-center gap-4 mb-6 p-4 bg-slate-50 rounded-xl">
-            <Avatar name={selected.fullName} size="xl" />
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">{selected.fullName}</h3>
-              <p className="text-sm text-slate-500">{selected.designation} · {selected.department}</p>
-              <div className="flex items-center gap-3 mt-2">
-                <span className="flex items-center gap-1 text-xs text-slate-400">
-                  <Mail size={12} />{selected.email}
-                </span>
-                <span className="flex items-center gap-1 text-xs text-slate-400">
-                  <Phone size={12} />{selected.phone}
-                </span>
+          {/* Clock in/out controls */}
+          <div className="flex-1 space-y-3 w-full">
+            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                <LogIn size={14} className="text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Check-in Time</p>
+                <p className="text-sm font-semibold text-slate-700">
+                  {checkInTime ?? '— Not checked in yet'}
+                </p>
               </div>
             </div>
-            <Badge status={selected.status} />
-          </div>
 
-          <div className="flex gap-2 mb-4 flex-wrap">
-            {['personal', 'job', 'attendance', 'leave', 'payroll', 'documents'].map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`tab-btn capitalize ${activeTab === tab ? 'active' : ''}`}
-              >
-                {tab}
-              </button>
+            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+              <div className="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center">
+                <LogOut size={14} className="text-rose-600" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Last Check-out</p>
+                <p className="text-sm font-semibold text-slate-700">
+                  {lastCheckOut ?? '— Still working'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={isClockedIn ? clockOut : clockIn}
+              className={`w-full py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2 ${isClockedIn
+                ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-md shadow-rose-200'
+                : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-md shadow-emerald-200'
+                }`}
+            >
+              {isClockedIn ? (
+                <>
+                  <LogOut size={16} /> Clock Out
+                </>
+              ) : (
+                <>
+                  <LogIn size={16} /> Clock In
+                </>
+              )}
+            </button>
+
+            <p className="text-xs text-center text-slate-400">
+              {isClockedIn
+                ? 'Timer continues if you log out and return today'
+                : 'New day resets the timer automatically'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Leave Balance */}
+        <div className="card">
+          <h3 className="font-bold text-slate-900 mb-4">Leave Balance</h3>
+          {leaveBalance.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-6">No leave data available</p>
+          ) : (
+            <div className="space-y-3">
+              {leaveBalance.map((lb) => (
+                <div key={lb.leaveType}>
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span className="font-medium text-slate-700">{lb.leaveType}</span>
+                    <span className="text-slate-500">
+                      {lb.remaining}/{lb.total}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary-500 rounded-full transition-all duration-500"
+                      style={{ width: `${(lb.remaining / lb.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Recent Attendance */}
+        <div className="card">
+          <h3 className="font-bold text-slate-900 mb-4">Recent Attendance</h3>
+          {myAttendance.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-6">No attendance records</p>
+          ) : (
+            <div className="space-y-2">
+              {myAttendance.map((a) => (
+                <div
+                  key={a.id ?? a.date}
+                  className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50"
+                >
+                  <div className="flex items-center gap-2">
+                    <Clock size={14} className="text-slate-400" />
+                    <span className="text-sm font-medium text-slate-700">
+                      {formatDate(a.date)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {a.checkIn && (
+                      <span className="text-xs font-mono text-slate-500">{a.checkIn}</span>
+                    )}
+                    <Badge status={a.status} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Upcoming Holidays */}
+        <div className="card">
+          <h3 className="font-bold text-slate-900 mb-4">Upcoming Holidays</h3>
+          {upcomingHolidays.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-6">No upcoming holidays</p>
+          ) : (
+            <div className="space-y-2">
+              {upcomingHolidays.map((h) => (
+                <div
+                  key={h._id}
+                  className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-rose-50 flex flex-col items-center justify-center flex-shrink-0">
+                    <span className="text-xs font-black text-rose-600">
+                      {new Date(h.date).getDate()}
+                    </span>
+                    <span className="text-xs text-rose-400">
+                      {new Date(h.date).toLocaleDateString('en-IN', { month: 'short' })}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{h.name}</p>
+                    <p className="text-xs text-slate-400 capitalize">{h.type}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Announcements */}
+      <div className="card">
+        <h3 className="font-bold text-slate-900 mb-4">Latest Announcements</h3>
+        {announcements.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-6">No announcements</p>
+        ) : (
+          <div className="space-y-3">
+            {announcements.map((a) => (
+              <div key={a.id ?? a.title} className="p-4 bg-slate-50 rounded-xl">
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="font-semibold text-slate-900 text-sm">{a.title}</p>
+                  <Badge status={a.priority} />
+                </div>
+                <p className="text-xs text-slate-500 line-clamp-2">{a.content}</p>
+                <p className="text-xs text-slate-400 mt-2">{formatDate(a.createdAt)}</p>
+              </div>
             ))}
           </div>
-
-          {activeTab === 'personal' && (
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              {[
-                ['Employee ID', selected.employeeId],
-                ['Full Name', selected.fullName],
-                ['Email', selected.email],
-                ['Phone', selected.phone],
-                ['Gender', selected.gender || '-'],
-                ['Date of Birth', formatDate(selected.dateOfBirth || '')],
-                ['Blood Group', selected.bloodGroup || '-'],
-                ['Address', selected.address],
-                ['Emergency Contact', selected.emergencyContact],
-              ].map(([k, v]) => (
-                <div key={k} className="p-3 bg-slate-50 rounded-xl">
-                  <p className="text-xs text-slate-400 mb-1">{k}</p>
-                  <p className="font-semibold text-slate-900">{v}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'job' && (
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              {[
-                ['Department', selected.department],
-                ['Designation', selected.designation],
-                ['Joining Date', formatDate(selected.joiningDate)],
-                ['Salary', formatCurrency(selected.salary)],
-                ['Status', selected.status],
-                ['Manager', selected.manager || '-'],
-              ].map(([k, v]) => (
-                <div key={k} className="p-3 bg-slate-50 rounded-xl">
-                  <p className="text-xs text-slate-400 mb-1">{k}</p>
-                  <p className="font-semibold text-slate-900">{v}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {['attendance', 'leave', 'payroll', 'documents'].includes(activeTab) && (
-            <div className="text-center py-12 text-slate-400">
-              <p className="text-sm">
-                Navigate to the {activeTab} module to view detailed records.
-              </p>
-            </div>
-          )}
-        </Modal>
-      )}
-
-      {/* Delete Confirm */}
-      <ConfirmDialog
-        isOpen={!!deleteId}
-        onConfirm={handleDelete}
-        onCancel={() => setDeleteId(null)}
-        title="Delete Employee"
-        message="Are you sure you want to delete this employee? This action cannot be undone."
-        confirmLabel={deleting ? 'Deleting...' : 'Delete Employee'}
-      />
+        )}
+      </div>
     </div>
   );
 }

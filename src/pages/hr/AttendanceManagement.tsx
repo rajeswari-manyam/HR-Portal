@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Download, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
-import { getAttendance, updateAttendance, calcWorkHours } from '../../service/attendance.service';
+import { Calendar, Download, CheckCircle, XCircle, Clock, AlertCircle, Plus } from 'lucide-react';
+import { getAttendance, updateAttendance, markAttendance, calcWorkHours } from '../../service/attendance.service';
 import Badge from '../../components/shared/Badge';
 import SearchInput from '../../components/shared/SearchInput';
 import Modal from '../../components/shared/Modal';
@@ -11,6 +11,7 @@ import InputField from '../../components/shared/InputField';
 import Select from '../../components/shared/Select';
 import Table from '../../components/shared/Table';
 
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface AttendanceRecord {
   _id: string;
   employeeId: string;
@@ -22,37 +23,81 @@ interface AttendanceRecord {
   employeeName?: string;
 }
 
+interface AddAttendanceForm {
+  employeeId: string;
+  date: string;
+  status: string;
+  checkIn: string;
+  checkOut: string;
+}
+
+// ── Derive attendance status from work hours ──────────────────────────────────
+function deriveStatus(checkIn?: string, checkOut?: string, manualStatus?: string): string {
+  if (manualStatus) return manualStatus;
+  if (!checkIn) return 'absent';
+  const wh = calcWorkHours(checkIn, checkOut);
+  if (wh === undefined) return 'present';
+  if (wh < 4) return 'half-day';
+  if (wh < 6) return 'late';
+  return 'present';
+}
+
+// ── Format "09:05" → "09:05 AM" ──────────────────────────────────────────────
+function fmt12(time?: string): string {
+  if (!time) return '—';
+  if (/AM|PM/i.test(time)) return time;
+  const [hStr, mStr] = time.split(':');
+  let h = parseInt(hStr, 10);
+  const m = mStr ?? '00';
+  const period = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${String(h).padStart(2, '0')}:${m} ${period}`;
+}
+
+const EMPTY_ADD_FORM: AddAttendanceForm = {
+  employeeId: '',
+  date: new Date().toISOString().split('T')[0],
+  status: 'present',
+  checkIn: '',
+  checkOut: '',
+};
+
+// ── Main Component ────────────────────────────────────────────────────────────
 export default function AttendanceManagement() {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [modal, setModal] = useState<'edit' | null>(null);
+  const [modal, setModal] = useState<'edit' | 'add' | null>(null);
   const [selected, setSelected] = useState<AttendanceRecord | null>(null);
   const [form, setForm] = useState<Partial<AttendanceRecord>>({});
+  const [addForm, setAddForm] = useState<AddAttendanceForm>(EMPTY_ADD_FORM);
   const [saving, setSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
+  // ── Fetch all attendance ──────────────────────────────────────────────────
   useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        setIsLoading(true);
-        const data = await getAttendance();
-        // ✅ Compute workHours on frontend since backend doesn't return it
-        const enriched = (data as AttendanceRecord[]).map(r => ({
-          ...r,
-          workHours: r.workHours ?? calcWorkHours(r.checkIn, r.checkOut),
-        }));
-        setRecords(enriched);
-      } catch (error) {
-        console.error('Failed to fetch attendance:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchAll();
+    fetchRecords();
   }, []);
 
+  const fetchRecords = async () => {
+    try {
+      setIsLoading(true);
+      const data = await getAttendance();
+      const enriched = (data as AttendanceRecord[]).map(r => ({
+        ...r,
+        workHours: r.workHours ?? calcWorkHours(r.checkIn, r.checkOut),
+      }));
+      setRecords(enriched);
+    } catch (err) {
+      console.error('Failed to fetch attendance:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── Filtering ─────────────────────────────────────────────────────────────
   const filtered = records.filter(r => {
     const name = r.employeeName ?? r.employeeId;
     const matchSearch =
@@ -63,6 +108,7 @@ export default function AttendanceManagement() {
     return matchSearch && matchDate && matchStatus;
   });
 
+  // ── Stats ─────────────────────────────────────────────────────────────────
   const stats = {
     present: records.filter(r => r.status === 'present').length,
     absent: records.filter(r => r.status === 'absent').length,
@@ -70,6 +116,7 @@ export default function AttendanceManagement() {
     halfDay: records.filter(r => r.status === 'half-day').length,
   };
 
+  // ── Edit modal ────────────────────────────────────────────────────────────
   const openEdit = (r: AttendanceRecord) => {
     setSelected(r);
     setForm({ ...r });
@@ -80,28 +127,99 @@ export default function AttendanceManagement() {
     if (!selected) return;
     setSaving(true);
     try {
+      const autoStatus = form.status !== selected.status
+        ? form.status
+        : deriveStatus(form.checkIn, form.checkOut);
+
       const updated = await updateAttendance(selected._id, {
         date: form.date,
-        status: form.status,
+        status: autoStatus,
         checkIn: form.checkIn,
         checkOut: form.checkOut,
       });
-      // ✅ Recalculate workHours after update
-      const enriched = {
+
+      const enriched: AttendanceRecord = {
+        ...selected,
         ...updated,
-        workHours: updated.workHours ?? calcWorkHours(updated.checkIn, updated.checkOut),
+        checkIn: form.checkIn,
+        checkOut: form.checkOut,
+        status: autoStatus ?? updated.status,
+        workHours: calcWorkHours(form.checkIn, form.checkOut),
       };
-      setRecords(prev =>
-        prev.map(r => r._id === selected._id ? { ...r, ...enriched } : r)
-      );
+
+      setRecords(prev => prev.map(r => r._id === selected._id ? enriched : r));
       setModal(null);
-    } catch (error) {
-      console.error('Failed to update attendance:', error);
+    } catch (err) {
+      console.error('Failed to update attendance:', err);
     } finally {
       setSaving(false);
     }
   };
-    console.log("Saving attendance");
+
+  // ── Add Attendance ────────────────────────────────────────────────────────
+  const openAdd = () => {
+    setAddForm(EMPTY_ADD_FORM);
+    setAddError(null);
+    setModal('add');
+  };
+
+  const handleAdd = async () => {
+    if (!addForm.employeeId.trim()) {
+      setAddError('Employee ID is required.');
+      return;
+    }
+    if (!addForm.date) {
+      setAddError('Date is required.');
+      return;
+    }
+    setSaving(true);
+    setAddError(null);
+    try {
+      // Auto-derive status from times if not manually chosen as absent
+      const autoStatus =
+        addForm.status === 'absent'
+          ? 'absent'
+          : deriveStatus(addForm.checkIn || undefined, addForm.checkOut || undefined, addForm.status);
+
+      const newRecord = await markAttendance({
+        employeeId: addForm.employeeId.trim(),
+        date: addForm.date,
+        status: autoStatus,
+        checkIn: addForm.checkIn || undefined,
+        checkOut: addForm.checkOut || undefined,
+      });
+
+      // Enrich with calculated work hours and add to list
+      const enriched: AttendanceRecord = {
+        ...newRecord,
+        workHours: calcWorkHours(addForm.checkIn || undefined, addForm.checkOut || undefined),
+      };
+
+      setRecords(prev => [enriched, ...prev]);
+      setModal(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to add attendance';
+      setAddError(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Live previews in modals ───────────────────────────────────────────────
+  const modalWorkHours = calcWorkHours(form.checkIn, form.checkOut);
+  const modalStatus = deriveStatus(form.checkIn, form.checkOut, form.status);
+
+  const addWorkHours = calcWorkHours(
+    addForm.checkIn || undefined,
+    addForm.checkOut || undefined
+  );
+  const addAutoStatus = deriveStatus(
+    addForm.checkIn || undefined,
+    addForm.checkOut || undefined,
+    addForm.status
+  );
+
+  // ── Table columns ─────────────────────────────────────────────────────────
   const columns = [
     {
       header: 'Employee',
@@ -118,24 +236,38 @@ export default function AttendanceManagement() {
     },
     {
       header: 'Check In',
-      render: (r: AttendanceRecord) => r.checkIn
-        ? <span className="font-mono text-sm text-emerald-600 font-semibold">{r.checkIn}</span>
-        : <span className="text-slate-300">—</span>,
+      render: (r: AttendanceRecord) =>
+        r.checkIn ? (
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
+            <span className="font-mono text-sm text-emerald-700 font-semibold">{fmt12(r.checkIn)}</span>
+          </div>
+        ) : (
+          <span className="text-slate-300">—</span>
+        ),
     },
     {
       header: 'Check Out',
-      render: (r: AttendanceRecord) => r.checkOut
-        ? <span className="font-mono text-sm text-slate-600 font-semibold">{r.checkOut}</span>
-        : <span className="text-slate-300">—</span>,
+      render: (r: AttendanceRecord) =>
+        r.checkOut ? (
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0" />
+            <span className="font-mono text-sm text-rose-700 font-semibold">{fmt12(r.checkOut)}</span>
+          </div>
+        ) : (
+          <span className="text-slate-300">—</span>
+        ),
     },
     {
       header: 'Work Hours',
-      // ✅ Show calculated work hours
       render: (r: AttendanceRecord) => {
         const wh = r.workHours ?? calcWorkHours(r.checkIn, r.checkOut);
-        return wh !== undefined
-          ? <span className="text-sm font-semibold text-slate-700">{wh}h</span>
-          : <span className="text-slate-300">—</span>;
+        if (wh === undefined) return <span className="text-slate-300">—</span>;
+        return (
+          <span className={`text-sm font-semibold ${wh >= 8 ? 'text-emerald-600' : wh >= 6 ? 'text-emerald-500' : wh >= 4 ? 'text-amber-500' : 'text-red-500'}`}>
+            {wh}h
+          </span>
+        );
       },
     },
     {
@@ -155,6 +287,7 @@ export default function AttendanceManagement() {
     },
   ];
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 animate-fade-in">
 
@@ -164,9 +297,14 @@ export default function AttendanceManagement() {
           <h1 className="page-title">Attendance</h1>
           <p className="page-subtitle">Track and manage employee attendance</p>
         </div>
-        <Button className="btn-secondary">
-          <Download size={16} /> Export
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button onClick={openAdd} className="btn-primary">
+            <Plus size={16} /> Add Attendance
+          </Button>
+          <Button className="btn-secondary">
+            <Download size={16} /> Export
+          </Button>
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -177,7 +315,13 @@ export default function AttendanceManagement() {
           { label: 'Late', value: stats.late, icon: Clock, color: 'bg-amber-100 text-amber-600' },
           { label: 'Half Day', value: stats.halfDay, icon: AlertCircle, color: 'bg-blue-100 text-blue-600' },
         ].map(s => (
-          <StatCard key={s.label} title={s.label} value={s.value} icon={<s.icon size={20} />} color={s.color} />
+          <StatCard
+            key={s.label}
+            title={s.label}
+            value={s.value}
+            icon={<s.icon size={20} />}
+            color={s.color}
+          />
         ))}
       </div>
 
@@ -233,8 +377,101 @@ export default function AttendanceManagement() {
         />
       )}
 
-      {/* Edit Modal */}
-      <Modal isOpen={modal !== null} onClose={() => setModal(null)} title="Edit Attendance">
+      {/* ── Add Attendance Modal ─────────────────────────────────────────── */}
+      <Modal isOpen={modal === 'add'} onClose={() => setModal(null)} title="Add Attendance">
+        <div className="space-y-4">
+
+          {/* Employee ID */}
+          <InputField
+            label="Employee ID"
+            type="text"
+            placeholder="e.g. EMP001"
+            value={addForm.employeeId}
+            onChange={e => setAddForm(p => ({ ...p, employeeId: e.target.value }))}
+          />
+
+          {/* Date */}
+          <InputField
+            label="Date"
+            type="date"
+            value={addForm.date}
+            onChange={e => setAddForm(p => ({ ...p, date: e.target.value }))}
+          />
+
+          {/* Check In & Check Out */}
+          <div className="grid grid-cols-2 gap-4">
+            <InputField
+              label="Check In"
+              type="time"
+              value={addForm.checkIn}
+              onChange={e => setAddForm(p => ({ ...p, checkIn: e.target.value }))}
+            />
+            <InputField
+              label="Check Out"
+              type="time"
+              value={addForm.checkOut}
+              onChange={e => setAddForm(p => ({ ...p, checkOut: e.target.value }))}
+            />
+          </div>
+
+          {/* Auto-calculated preview */}
+          {(addForm.checkIn || addForm.checkOut) && (
+            <div className="p-3 bg-slate-50 rounded-xl space-y-1.5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Calculated work hours</span>
+                <span className="font-bold text-slate-900">
+                  {addWorkHours !== undefined ? `${addWorkHours}h` : '—'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Auto status</span>
+                <Badge status={addAutoStatus} />
+              </div>
+            </div>
+          )}
+
+          {/* Status override */}
+          <div>
+            <label className="label">Status</label>
+            <select
+              className="input"
+              value={addForm.status}
+              onChange={e => setAddForm(p => ({ ...p, status: e.target.value }))}
+            >
+              <option value="present">Present</option>
+              <option value="absent">Absent</option>
+              <option value="late">Late</option>
+              <option value="half-day">Half Day</option>
+            </select>
+            <p className="text-xs text-slate-400 mt-1">
+              Auto-detected from check-in/out times, or override manually.
+            </p>
+          </div>
+
+          {/* Error */}
+          {addError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
+              {addError}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <Button onClick={() => setModal(null)} className="btn-secondary flex-1 justify-center">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleAdd}
+            className="btn-primary flex-1 justify-center"
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : 'Add Record'}
+          </Button>
+        </div>
+      </Modal>
+
+      {/* ── Edit Attendance Modal ────────────────────────────────────────── */}
+      <Modal isOpen={modal === 'edit'} onClose={() => setModal(null)} title="Edit Attendance">
         <div className="space-y-4">
           <InputField
             label="Date"
@@ -256,15 +493,22 @@ export default function AttendanceManagement() {
               onChange={e => setForm(p => ({ ...p, checkOut: e.target.value }))}
             />
           </div>
-          {/* ✅ Live preview of work hours in modal */}
-          {form.checkIn && form.checkOut && (
-            <div className="p-3 bg-slate-50 rounded-xl text-sm text-slate-600">
-              Calculated Work Hours:{' '}
-              <span className="font-bold text-slate-900">
-                {calcWorkHours(form.checkIn, form.checkOut) ?? '—'}h
-              </span>
+
+          {(form.checkIn || form.checkOut) && (
+            <div className="p-3 bg-slate-50 rounded-xl space-y-1.5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Calculated work hours</span>
+                <span className="font-bold text-slate-900">
+                  {modalWorkHours !== undefined ? `${modalWorkHours}h` : '—'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Auto status</span>
+                <Badge status={modalStatus} />
+              </div>
             </div>
           )}
+
           <div>
             <label className="label">Status</label>
             <select
@@ -277,14 +521,22 @@ export default function AttendanceManagement() {
               <option value="late">Late</option>
               <option value="half-day">Half Day</option>
             </select>
+            <p className="text-xs text-slate-400 mt-1">
+              Leave as auto-detected or override manually above.
+            </p>
           </div>
         </div>
+
         <div className="flex gap-3 mt-6">
           <Button onClick={() => setModal(null)} className="btn-secondary flex-1 justify-center">
             Cancel
           </Button>
-          <Button onClick={handleSave} className="btn-primary flex-1 justify-center" disabled={saving}>
-            {saving ? 'Saving...' : 'Save'}
+          <Button
+            onClick={handleSave}
+            className="btn-primary flex-1 justify-center"
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
           </Button>
         </div>
       </Modal>
